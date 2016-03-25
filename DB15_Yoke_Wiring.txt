@@ -1,0 +1,15 @@
+DB15 Wiring:
+Tank Yoke:
+
+1.)  Trig Right
+2.)  Thumb Right
+3.)  Grip Right
+4.)  Trig Left
+5.)  Thumb Left
+6.)  Grip Left
+7.)  3.3v to pitch pot (bypassed with 0.1uF) in series with 1.5k resistor
+8.)  3.3v to roll pot (bypassed with 0.1uF) in series with 330 ohm resistor
+9.)  Pitch Wiper
+10.) Roll Wiper
+
+13-15.) Ground

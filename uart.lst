@@ -1,0 +1,331 @@
+   1               		.file	"uart.c"
+   2               	__SP_H__ = 0x3e
+   3               	__SP_L__ = 0x3d
+   4               	__SREG__ = 0x3f
+   5               	__RAMPZ__ = 0x3b
+   6               	__CCP__ = 0x34
+   7               	__tmp_reg__ = 0
+   8               	__zero_reg__ = 1
+   9               		.text
+  10               	.Ltext0:
+  11               		.cfi_sections	.debug_frame
+  12               	.global	UartTxBufferReady
+  14               	UartTxBufferReady:
+  15               	.LFB2:
+  16               		.file 1 "uart.c"
+   1:uart.c        **** //-----------------------------------------------------------------------
+   2:uart.c        **** //-----------------------------------------------------------------------
+   3:uart.c        **** // UART functions.
+   4:uart.c        **** //-----------------------------------------------------------------------
+   5:uart.c        **** //-----------------------------------------------------------------------
+   6:uart.c        **** // For XMEGA MCUs.
+   7:uart.c        **** // NOTE -- we are associated with one uart here only, this is not great use of the xmega register-a
+   8:uart.c        **** // Mon Oct 31 16:06:56 EDT 2011
+   9:uart.c        **** 
+  10:uart.c        **** #include "includes.h"
+  11:uart.c        **** 
+  12:uart.c        **** #define		USART		USARTF0
+  13:uart.c        **** 
+  14:uart.c        **** bool UartTxBufferReady(void)
+  15:uart.c        **** {
+  17               		.loc 1 15 0
+  18               		.cfi_startproc
+  19               	/* prologue: function */
+  20               	/* frame size = 0 */
+  21               	/* stack size = 0 */
+  22               	.L__stack_usage = 0
+  16:uart.c        **** 	if(USART.STATUS&USART_DREIF_bm)		// Room in the transmit buffer? (bit is 1 when there's room)
+  23               		.loc 1 16 0
+  24 0000 E0EA      		ldi r30,lo8(-96)
+  25 0002 FBE0      		ldi r31,lo8(11)
+  26 0004 8181      		ldd r24,Z+1
+  17:uart.c        **** 	{
+  18:uart.c        **** 		return(true);
+  19:uart.c        **** 	}
+  20:uart.c        **** 	return(false);
+  21:uart.c        **** }
+  27               		.loc 1 21 0
+  28 0006 85FB      		bst r24,5
+  29 0008 8827      		clr r24
+  30 000a 80F9      		bld r24,0
+  31 000c 0895      		ret
+  32               		.cfi_endproc
+  33               	.LFE2:
+  35               	.global	UartSendByte
+  37               	UartSendByte:
+  38               	.LFB3:
+  22:uart.c        **** 
+  23:uart.c        **** void UartSendByte(unsigned char byte)
+  24:uart.c        **** // Waits (forever if necessary) until the the send buffer is ready, then sends a byte out over the 
+  25:uart.c        **** // NOTE -- this doesn't check whether the output shift register is still clocking out data (ie, whe
+  26:uart.c        **** {
+  39               		.loc 1 26 0
+  40               		.cfi_startproc
+  41               	/* prologue: function */
+  42               	/* frame size = 0 */
+  43               	/* stack size = 0 */
+  44               	.L__stack_usage = 0
+  45               	.LVL0:
+  46               	.L4:
+  27:uart.c        **** 	while(!(USART.STATUS&USART_DREIF_bm))		// Hang here until there is room in the transmit buffer (bi
+  47               		.loc 1 27 0 discriminator 1
+  48 000e 9091 A10B 		lds r25,2977
+  49 0012 95FF      		sbrs r25,5
+  50 0014 00C0      		rjmp .L4
+  28:uart.c        **** 		;
+  29:uart.c        **** 	USART.DATA=byte;							// Load the TX buffer.  The byte will clock out automagically.
+  51               		.loc 1 29 0
+  52 0016 8093 A00B 		sts 2976,r24
+  53 001a 0895      		ret
+  54               		.cfi_endproc
+  55               	.LFE3:
+  57               	.global	UartGetByte
+  59               	UartGetByte:
+  60               	.LFB4:
+  30:uart.c        **** }
+  31:uart.c        **** 
+  32:uart.c        **** unsigned char UartGetByte()
+  33:uart.c        **** // Gets the first byte in the UART's receive buffer.
+  34:uart.c        **** {
+  61               		.loc 1 34 0
+  62               		.cfi_startproc
+  63               	/* prologue: function */
+  64               	/* frame size = 0 */
+  65               	/* stack size = 0 */
+  66               	.L__stack_usage = 0
+  35:uart.c        **** 	return(USART.DATA);		// Get one byte back from the receive buffer.  Note that there may be (one) m
+  67               		.loc 1 35 0
+  68 001c 8091 A00B 		lds r24,2976
+  36:uart.c        **** }
+  69               		.loc 1 36 0
+  70 0020 0895      		ret
+  71               		.cfi_endproc
+  72               	.LFE4:
+  74               	.global	UartGotByte
+  76               	UartGotByte:
+  77               	.LFB5:
+  37:uart.c        **** 
+  38:uart.c        **** bool UartGotByte()
+  39:uart.c        **** // Returns true when there is unread data in the UART's receive buffer.
+  40:uart.c        **** {
+  78               		.loc 1 40 0
+  79               		.cfi_startproc
+  80               	/* prologue: function */
+  81               	/* frame size = 0 */
+  82               	/* stack size = 0 */
+  83               	.L__stack_usage = 0
+  41:uart.c        **** 	if(USART.STATUS&USART_RXCIF_bm)		// Flag is set when there are unread data in the buffer
+  84               		.loc 1 41 0
+  85 0022 E0EA      		ldi r30,lo8(-96)
+  86 0024 FBE0      		ldi r31,lo8(11)
+  87 0026 8181      		ldd r24,Z+1
+  42:uart.c        **** 	{
+  43:uart.c        **** 		return(true);
+  44:uart.c        **** 	}
+  45:uart.c        **** 	return(false);
+  46:uart.c        **** }
+  88               		.loc 1 46 0
+  89 0028 881F      		rol r24
+  90 002a 8827      		clr r24
+  91 002c 881F      		rol r24
+  92 002e 0895      		ret
+  93               		.cfi_endproc
+  94               	.LFE5:
+  96               	.global	UartWaitForByte
+  98               	UartWaitForByte:
+  99               	.LFB6:
+  47:uart.c        **** 
+  48:uart.c        **** void UartWaitForByte()
+  49:uart.c        **** // Hang out here (maybe forever) until we get a byte.
+  50:uart.c        **** {
+ 100               		.loc 1 50 0
+ 101               		.cfi_startproc
+ 102               	/* prologue: function */
+ 103               	/* frame size = 0 */
+ 104               	/* stack size = 0 */
+ 105               	.L__stack_usage = 0
+ 106               	.L10:
+  51:uart.c        **** 	while(!UartGotByte())				// If there's not new data in the buffer, wait here until there is.
+ 107               		.loc 1 51 0 discriminator 1
+ 108 0030 0E94 0000 		call UartGotByte
+ 109               	.LVL1:
+ 110 0034 8823      		tst r24
+ 111 0036 01F0      		breq .L10
+ 112               	/* epilogue start */
+  52:uart.c        **** 		;
+  53:uart.c        **** }
+ 113               		.loc 1 53 0
+ 114 0038 0895      		ret
+ 115               		.cfi_endproc
+ 116               	.LFE6:
+ 118               	.global	UartFlushBuffer
+ 120               	UartFlushBuffer:
+ 121               	.LFB7:
+  54:uart.c        **** 
+  55:uart.c        **** void UartFlushBuffer()
+  56:uart.c        **** // Empties the serial buffer.
+  57:uart.c        **** {
+ 122               		.loc 1 57 0
+ 123               		.cfi_startproc
+ 124               	/* prologue: function */
+ 125               	/* frame size = 0 */
+ 126               	/* stack size = 0 */
+ 127               	.L__stack_usage = 0
+ 128               	.L12:
+  58:uart.c        **** 	while(UartGotByte())
+ 129               		.loc 1 58 0 discriminator 1
+ 130 003a 0E94 0000 		call UartGotByte
+ 131               	.LVL2:
+ 132 003e 8823      		tst r24
+ 133 0040 01F0      		breq .L14
+ 134               	.LBB4:
+ 135               	.LBB5:
+  35:uart.c        **** 	return(USART.DATA);		// Get one byte back from the receive buffer.  Note that there may be (one) m
+ 136               		.loc 1 35 0
+ 137 0042 8091 A00B 		lds r24,2976
+ 138 0046 00C0      		rjmp .L12
+ 139               	.L14:
+ 140               	/* epilogue start */
+ 141               	.LBE5:
+ 142               	.LBE4:
+  59:uart.c        **** 	{
+  60:uart.c        **** 		UartGetByte();
+  61:uart.c        **** 	}
+  62:uart.c        **** }
+ 143               		.loc 1 62 0
+ 144 0048 0895      		ret
+ 145               		.cfi_endproc
+ 146               	.LFE7:
+ 148               	.global	UnInitUart
+ 150               	UnInitUart:
+ 151               	.LFB8:
+  63:uart.c        **** 
+  64:uart.c        **** void UnInitUart()
+  65:uart.c        **** // Undo what InitUart did.
+  66:uart.c        **** {
+ 152               		.loc 1 66 0
+ 153               		.cfi_startproc
+ 154               	/* prologue: function */
+ 155               	/* frame size = 0 */
+ 156               	/* stack size = 0 */
+ 157               	.L__stack_usage = 0
+  67:uart.c        **** 	USART.CTRLB=0;		// Disable transmitter and receiver
+ 158               		.loc 1 67 0
+ 159 004a E0EA      		ldi r30,lo8(-96)
+ 160 004c FBE0      		ldi r31,lo8(11)
+ 161 004e 1482      		std Z+4,__zero_reg__
+ 162 0050 0895      		ret
+ 163               		.cfi_endproc
+ 164               	.LFE8:
+ 166               	.global	InitUart
+ 168               	InitUart:
+ 169               	.LFB9:
+  68:uart.c        **** }
+  69:uart.c        **** 
+  70:uart.c        **** void InitUart()
+  71:uart.c        **** // This UART setup is for 38400 baud, 8 data bits, one stop bit, no parity, no flow control.
+  72:uart.c        **** // Interrupts are disabled.
+  73:uart.c        **** {
+ 170               		.loc 1 73 0
+ 171               		.cfi_startproc
+ 172               	/* prologue: function */
+ 173               	/* frame size = 0 */
+ 174               	/* stack size = 0 */
+ 175               	.L__stack_usage = 0
+  74:uart.c        **** 	// Port specific stuff:
+  75:uart.c        **** 
+  76:uart.c        **** 	PR.PRPF&=~PR_USART0_bm;	// USART0 power on for this port
+ 176               		.loc 1 76 0
+ 177 0052 E0E7      		ldi r30,lo8(112)
+ 178 0054 F0E0      		ldi r31,0
+ 179 0056 8681      		ldd r24,Z+6
+ 180 0058 8F7E      		andi r24,lo8(-17)
+ 181 005a 8683      		std Z+6,r24
+  77:uart.c        **** 
+  78:uart.c        **** 	PORTF.OUTSET=PIN3_bm;
+ 182               		.loc 1 78 0
+ 183 005c E0EA      		ldi r30,lo8(-96)
+ 184 005e F6E0      		ldi r31,lo8(6)
+ 185 0060 88E0      		ldi r24,lo8(8)
+ 186 0062 8583      		std Z+5,r24
+  79:uart.c        **** 	PORTF.DIRSET=PIN3_bm;	// PF3 (TXD0) as output driving high
+ 187               		.loc 1 79 0
+ 188 0064 8183      		std Z+1,r24
+  80:uart.c        **** 
+  81:uart.c        **** 	PORTF.DIRCLR=PIN2_bm;	// PF2 (RXD0) as input
+ 189               		.loc 1 81 0
+ 190 0066 84E0      		ldi r24,lo8(4)
+ 191 0068 8283      		std Z+2,r24
+  82:uart.c        **** 	USART.CTRLB=0;			// Tx / Rx off for now, normal rate
+ 192               		.loc 1 82 0
+ 193 006a E0EA      		ldi r30,lo8(-96)
+ 194 006c FBE0      		ldi r31,lo8(11)
+ 195 006e 1482      		std Z+4,__zero_reg__
+  83:uart.c        **** 
+  84:uart.c        **** 	// Baud:
+  85:uart.c        **** 	#if F_CPU==16000000UL 
+  86:uart.c        **** 	// 16MHz peripheral clock, normal speed, 38.4kbaud: BSEL=25.042 (bscale=0) error == 0.16%
+  87:uart.c        **** 	USART.BAUDCTRLB=0;			// No bscale (no fractional rate)
+  88:uart.c        **** 	USART.BAUDCTRLA=25;			// 38,400 at 16MHz per clock (see above)
+  89:uart.c        **** 	#warning "Uart assuming 16Mhz F_CPU..."
+  90:uart.c        **** 	#elif F_CPU==20000000UL
+  91:uart.c        **** 	// 20MHz peripheral clock, double speed, 38.4kbaud: BSEL=64.10 (bscale=0) error == 0.16%
+  92:uart.c        **** 	USART.BAUDCTRLB=0;			// No bscale (no fractional rate)
+ 196               		.loc 1 92 0
+ 197 0070 1782      		std Z+7,__zero_reg__
+  93:uart.c        **** 	USART.BAUDCTRLA=64;			// 38,400 at 20MHz per clock (see above)
+ 198               		.loc 1 93 0
+ 199 0072 80E4      		ldi r24,lo8(64)
+ 200 0074 8683      		std Z+6,r24
+  94:uart.c        **** 	USART.CTRLB|=(USART_CLK2X_bm);	// Set double rate
+ 201               		.loc 1 94 0
+ 202 0076 8481      		ldd r24,Z+4
+ 203 0078 8460      		ori r24,lo8(4)
+ 204 007a 8483      		std Z+4,r24
+  95:uart.c        **** 	#warning "Uart assuming 20Mhz F_CPU..."
+  96:uart.c        **** 	#else
+  97:uart.c        **** 	#error "Can't generate a baud rate from the current F_CPU."
+  98:uart.c        **** 	#endif
+  99:uart.c        **** 
+ 100:uart.c        **** 	USART.CTRLA=0;						// No interrupts
+ 205               		.loc 1 100 0
+ 206 007c 1382      		std Z+3,__zero_reg__
+ 101:uart.c        **** 	USART.CTRLC=USART_CHSIZE_8BIT_gc;	// Set 8,N,1
+ 207               		.loc 1 101 0
+ 208 007e 83E0      		ldi r24,lo8(3)
+ 209 0080 8583      		std Z+5,r24
+ 102:uart.c        **** 
+ 103:uart.c        **** 	USART.CTRLB|=(USART_RXEN_bm|USART_TXEN_bm);	// Enable transmitter and reciever at normal rate
+ 210               		.loc 1 103 0
+ 211 0082 8481      		ldd r24,Z+4
+ 212 0084 8861      		ori r24,lo8(24)
+ 213 0086 8483      		std Z+4,r24
+ 104:uart.c        **** 	UartFlushBuffer();							// Get rid of any poo poo hanging out in the input buffer.
+ 214               		.loc 1 104 0
+ 215 0088 0C94 0000 		jmp UartFlushBuffer
+ 216               	.LVL3:
+ 217               		.cfi_endproc
+ 218               	.LFE9:
+ 220               	.Letext0:
+ 221               		.file 2 "/usr/lib/avr/include/stdint.h"
+ 222               		.file 3 "/usr/lib/avr/include/avr/iox64a3.h"
+ 223               		.file 4 "defines.h"
+DEFINED SYMBOLS
+                            *ABS*:00000000 uart.c
+     /tmp/cc66xk6u.s:2      *ABS*:0000003e __SP_H__
+     /tmp/cc66xk6u.s:3      *ABS*:0000003d __SP_L__
+     /tmp/cc66xk6u.s:4      *ABS*:0000003f __SREG__
+     /tmp/cc66xk6u.s:5      *ABS*:0000003b __RAMPZ__
+     /tmp/cc66xk6u.s:6      *ABS*:00000034 __CCP__
+     /tmp/cc66xk6u.s:7      *ABS*:00000000 __tmp_reg__
+     /tmp/cc66xk6u.s:8      *ABS*:00000001 __zero_reg__
+     /tmp/cc66xk6u.s:14     .text:00000000 UartTxBufferReady
+     /tmp/cc66xk6u.s:37     .text:0000000e UartSendByte
+     /tmp/cc66xk6u.s:59     .text:0000001c UartGetByte
+     /tmp/cc66xk6u.s:76     .text:00000022 UartGotByte
+     /tmp/cc66xk6u.s:98     .text:00000030 UartWaitForByte
+     /tmp/cc66xk6u.s:120    .text:0000003a UartFlushBuffer
+     /tmp/cc66xk6u.s:150    .text:0000004a UnInitUart
+     /tmp/cc66xk6u.s:168    .text:00000052 InitUart
+
+NO UNDEFINED SYMBOLS

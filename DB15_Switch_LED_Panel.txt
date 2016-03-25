@@ -1,0 +1,65 @@
+DB15
+LED and switch panel
+(revised to drive both RED and GREEN LEDs)
+
+12v lamps in pushbutton switches run through a different daughterboard (connected via terminal blocks)
+
+1		PORTA,4		unused					Brown
+2		PORTA,5		unused					Orange
+3		PORTA,6		CLOCK to latch board			Yel
+4		PORTA,7		DATA to latch board			Green
+
+5		PORTB,6		Toggle 0				Blue
+6		PORTB,7		Toggle 1				Purp
+7		PORTC,0		Toggle 2				Gray
+8		PORTC,1		Toggle 3				White
+
+9		-------		GROUND					Black
+10		-------		+3v3					Red
+
+14		PORTE,0		Pushbutton 0 (NC)			Stripes
+15		PORTE,1		Pushbutton 1 (NC)			Brown
+
+
+Panel Front:
+---------------
+
+
+	Tog 0			LED 0
+
+	Tog 1			LED 1
+	
+	Tog 2			LED 2
+	
+	Tog 3			LED 3
+	
+	
+		Push/Lamp 0
+		
+		Push/Lamp 1
+
+
+Latch Board:
+----------------
+
+Consists of a 74HC595 and two 'AC14 hex inverters.
+RCLK and SRCLK are tied together.
+NOTE -- drive is inverted because of the hex inverters -- so a 0 turns the LEDs on.
+
+Pin:		To:		Color:	
+-----		--------	---------
+GND		GND		Black
++3v3		VCC		Red		
+
+CLK		DB15 3		Yellow
+SER		DB15 4		Green
+
+Qa		Green 0		Brown
+Qb		Green 1		Orange
+Qc		Green 2		Yellow
+Qd		Green 3		Green
+
+Qe		Red 0		Blue
+Qf		Red 1		Purple
+Qg		Red 2		Gray
+Qh		Red 3		White

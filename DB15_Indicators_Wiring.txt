@@ -1,0 +1,63 @@
+DB15
+Flight Status Indicators:
+
+All driven by Xmega--> 470R base resistor --> BC337
+Standard "load returned to ground via collector" switch
+
+1		------		12v Power				Red
+
+2		PORTC,5		Flight indicator 0 (out)		Brown
+3		PORTC,6		Flight indicator 1 (out)		Orange
+4		PORTC,7		Flight indicator 2 (out)		Yel
+
+5		PORTD,0		Flight indicator 3 (out)		Green
+6		PORTD,1		Flight indicator 4 (out)		Blue
+7		PORTD,2		Flight indicator 5 (out)		Purp
+8		PORTD,3		Flight indicator 6 (out)		Gray
+9		PORTD,4		Flight indicator 7 (out)		White
+10		PORTD,5		Flight indicator 8 (out)		Stripes
+11		PORTD,6		Flight indicator 9 (out)		Orange
+
+Pushbutton Lamp Transistors are on this board also:
+----------------------------------------------------
+(Same xistor idea)
+
+Pushbutton 0 Lamp							Yellow
+Pushbutton 1 Lamp							Green
+
+
+Status indicators (front)
+--------------------------------------
+
+
+_________________________________
+|		|		|
+|		|		|
+|	0	|	1	|
+|		|		|
+|		|		|
+----------------|---------------|
+|		|		|
+|		|		|
+|	2	|	3	|
+|		|		|
+|		|		|
+----------------|---------------|
+|		|		|
+|		|		|
+|	4	|	5	|
+|		|		|
+|		|		|
+----------------|---------------|
+|		|		|
+|		|		|
+|	6	|	7	|
+|		|		|
+|		|		|
+----------------|---------------|
+|		|		|
+|		|		|
+|	8	|	9	|
+|		|		|
+|		|		|
+----------------|---------------|

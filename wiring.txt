@@ -1,0 +1,63 @@
+Wiring / Port Assignments For VEC9 IO
+Atxmega64a3u
+On Narrat1ve Lil' Sorceror PCB
+
+Todd Bailey
+
+
+Port:		Function:				Color:
+-------		------------------			----------	
+
+PORTA,0		(Vref +)
+PORTA,1		Yoke roll				White
+PORTA,2		Yoke pitch				G/Y
+PORTA,3		(Vref -)
+PORTA,4		(unused, was LED)			(was Brown)
+PORTA,5		(unused, was LED)			(was Orange)
+PORTA,6		CLK to 595				Yel
+PORTA,7		SER to 595				Green
+
+PORTB,0		R Main Trig				Brown
+PORTB,1		R Thumb Trig				Orange
+PORTB,2		R Grip Trig				Yellow
+PORTB,3		L Main Trig				Green
+PORTB,4		L Thumb Trig				Blue
+PORTB,5		L Grip Trig				Purple
+PORTB,6		Toggle 0				Blue
+PORTB,7		Toggle 1				Purp
+
+PORTC,0		Toggle 2				Gray
+PORTC,1		Toggle 3				White
+PORTC,2		Red Pushbutton 0 (NC, annoying)		Stripes
+PORTC,3		Red Pushbutton 1 (NC, annoying)		Brown
+PORTC,4		Coin Switch (was Key Switch)		Blue
+PORTC,5		Flight indicator 0 (out)		Brown
+PORTC,6		Flight indicator 1 (out)		Orange
+PORTC,7		Flight indicator 2 (out)		Yel
+
+PORTD,0		Flight indicator 3 (out)		Green
+PORTD,1		Flight indicator 4 (out)		Blue
+PORTD,2		Flight indicator 5 (out)		Purp
+PORTD,3		Flight indicator 6 (out)		Gray
+PORTD,4		Flight indicator 7 (out)		White
+PORTD,5		Flight indicator 8 (out)		G/Y
+PORTD,6		Flight indicator 9 (out)		Orange
+PORTD,7		Air Horn (out)				Yellow
+
+PORTE,0		Red Pushbutton Lamp 0 (out)		Yel
+PORTE,1		Red Pushbutton Lamp 1 (out)		Green
+PORTE,2		Test Mode Switch (in)			White
+PORTE,3		(audio stuff)
+PORTE,4		(audio stuff)
+PORTE,5		(audio stuff)
+PORTE,6		(audio stuff)
+PORTE,7		(audio stuff)
+
+PORTF,0		(SMD Pad -- can use in a pinch)
+PORTF,1		(SMD Pad -- can use in a pinch)
+PORTF,2		UART Rx	
+PORTF,3		UART Tx
+PORTF,4		(NC)
+PORTF,5		(NC)
+PORTF,6		(NC)
+PORTF,7		(Amplifier SD)

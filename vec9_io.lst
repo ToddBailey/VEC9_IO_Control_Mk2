@@ -1,0 +1,3981 @@
+   1               		.file	"vec9_io.c"
+   2               	__SP_H__ = 0x3e
+   3               	__SP_L__ = 0x3d
+   4               	__SREG__ = 0x3f
+   5               	__RAMPZ__ = 0x3b
+   6               	__CCP__ = 0x34
+   7               	__tmp_reg__ = 0
+   8               	__zero_reg__ = 1
+   9               		.text
+  10               	.Ltext0:
+  11               		.cfi_sections	.debug_frame
+  13               	CCPWrite:
+  14               	.LFB6:
+  15               		.file 1 "vec9_io.c"
+   1:vec9_io.c     **** // VEC9 Input/Output Adapter
+   2:vec9_io.c     **** // Todd Michael Bailey
+   3:vec9_io.c     **** 
+   4:vec9_io.c     **** //=============================
+   5:vec9_io.c     **** // Atmel AVR ATXmega384d3u
+   6:vec9_io.c     **** // 20MHz Silicon Oscillator (LTC6905)
+   7:vec9_io.c     **** // GCC 4.8.2
+   8:vec9_io.c     **** //==============================
+   9:vec9_io.c     **** 
+  10:vec9_io.c     **** 
+  11:vec9_io.c     **** /*
+  12:vec9_io.c     **** Description:
+  13:vec9_io.c     **** ==============================================================================
+  14:vec9_io.c     **** NOTE -- this was first based on the older PS2 adapter for VEC9 which used serial communications to 
+  15:vec9_io.c     **** The newer unit uses the M1 Abrams Tank Gun Control Yoke and has generic IOs (reads resistances and 
+  16:vec9_io.c     **** 
+  17:vec9_io.c     **** The "start of message" bytes are PS2 related, and can (should) change.
+  18:vec9_io.c     **** 
+  19:vec9_io.c     **** Inputs:
+  20:vec9_io.c     **** ----------------
+  21:vec9_io.c     **** Yoke Pitch (analog)
+  22:vec9_io.c     **** Yoke Roll (analog)
+  23:vec9_io.c     **** Yoke Triggers Right (3)
+  24:vec9_io.c     **** Yoke Triggers Left (3)
+  25:vec9_io.c     **** Safety Switches (4)
+  26:vec9_io.c     **** Illuminated Switches (2 -- NC (annoying))
+  27:vec9_io.c     **** Key Switch (1) (unused)
+  28:vec9_io.c     **** Coin Switch (1) (replaces key switch)
+  29:vec9_io.c     **** Test Mode switch (1)
+  30:vec9_io.c     **** Total: 14 + 2
+  31:vec9_io.c     **** 
+  32:vec9_io.c     **** Outputs:
+  33:vec9_io.c     **** -----------------
+  34:vec9_io.c     **** Flight Indicators (10, incandescent)
+  35:vec9_io.c     **** Illuminated Switches (2, incandescent)
+  36:vec9_io.c     **** Air Horn (1, motor-ish)
+  37:vec9_io.c     **** Red/Green LED Switch Panel Indicators (8)
+  38:vec9_io.c     **** 
+  39:vec9_io.c     **** Total: 21
+  40:vec9_io.c     **** 
+  41:vec9_io.c     **** Total IO = 37
+  42:vec9_io.c     **** 
+  43:vec9_io.c     **** In order to get all these, we drive the R/G LEDs with a serial-parallel converter (a 595 and invert
+  44:vec9_io.c     **** 
+  45:vec9_io.c     **** ==================================================================================================
+  46:vec9_io.c     **** ==================================================================================================
+  47:vec9_io.c     **** 
+  48:vec9_io.c     **** ==================================================================================================
+  49:vec9_io.c     **** ==================================================================================================
+  50:vec9_io.c     **** 
+  51:vec9_io.c     **** Serial Data Format:
+  52:vec9_io.c     **** ---------------------
+  53:vec9_io.c     **** All serial exchanges are at 38400,8,1,N.
+  54:vec9_io.c     **** 
+  55:vec9_io.c     **** PC-To-Xmega (Poll Request / Set outputs):
+  56:vec9_io.c     **** --------------------------------------------
+  57:vec9_io.c     **** 0x42 outputsMsb outputsMiddle outputsLsb
+  58:vec9_io.c     **** 
+  59:vec9_io.c     **** 
+  60:vec9_io.c     **** Reply from XMEGA:
+  61:vec9_io.c     **** ------------------------
+  62:vec9_io.c     **** 0x41 switchData0 switchlData1 0 0 analogRoll analogPitch
+  63:vec9_io.c     **** 
+  64:vec9_io.c     **** 
+  65:vec9_io.c     **** Timer Hardware Usage:
+  66:vec9_io.c     **** --------------------------
+  67:vec9_io.c     **** 
+  68:vec9_io.c     **** 
+  69:vec9_io.c     **** */
+  70:vec9_io.c     **** 
+  71:vec9_io.c     **** #include	"includes.h"
+  72:vec9_io.c     **** 
+  73:vec9_io.c     **** #define		BUILD_DATE						__DATE__	// String we print when we want to know when we last updated this
+  74:vec9_io.c     **** 
+  75:vec9_io.c     **** // --------------------------
+  76:vec9_io.c     **** // Defines for this file:
+  77:vec9_io.c     **** // --------------------------
+  78:vec9_io.c     **** 
+  79:vec9_io.c     **** // --------------------------
+  80:vec9_io.c     **** // Globals for this file:
+  81:vec9_io.c     **** // --------------------------
+  82:vec9_io.c     **** 
+  83:vec9_io.c     **** // --------------------------
+  84:vec9_io.c     **** // Function Prototypes:
+  85:vec9_io.c     **** // --------------------------
+  86:vec9_io.c     **** 
+  87:vec9_io.c     **** static void CCPWrite( volatile uint8_t * address, uint8_t value );
+  88:vec9_io.c     **** 
+  89:vec9_io.c     **** //-----------------------------------------------------------------------
+  90:vec9_io.c     **** //-----------------------------------------------------------------------
+  91:vec9_io.c     **** // State Machine Functions.
+  92:vec9_io.c     **** //-----------------------------------------------------------------------
+  93:vec9_io.c     **** //-----------------------------------------------------------------------
+  94:vec9_io.c     **** 
+  95:vec9_io.c     **** void SetState(STATE_FUNC *newState)		// Sets the device to a new state, assumes it should begin at 
+  96:vec9_io.c     **** {
+  97:vec9_io.c     **** 	State=newState;
+  98:vec9_io.c     **** 	subState=SS_0;
+  99:vec9_io.c     **** }
+ 100:vec9_io.c     **** 
+ 101:vec9_io.c     **** 
+ 102:vec9_io.c     **** // --------------------------
+ 103:vec9_io.c     **** // Error Recovery:
+ 104:vec9_io.c     **** // --------------------------
+ 105:vec9_io.c     **** 
+ 106:vec9_io.c     **** ISR(__vector_default)
+ 107:vec9_io.c     **** {
+ 108:vec9_io.c     ****     //  This means a bug happened.  Some interrupt that shouldn't have generated an interrupt went 
+ 109:vec9_io.c     **** 	//	printf("Buggy Interrupt Generated!  Flags = ");
+ 110:vec9_io.c     **** 	//  printf("*****put interrupt register values here****");
+ 111:vec9_io.c     **** 
+ 112:vec9_io.c     **** 	// Hang, or reset part, or whatever
+ 113:vec9_io.c     **** 
+ 114:vec9_io.c     **** 	asm("jmp 0000");			// head to normal reset vector, should never happen
+ 115:vec9_io.c     **** }
+ 116:vec9_io.c     **** 
+ 117:vec9_io.c     **** //-----------------------------------------------------------------------
+ 118:vec9_io.c     **** //-----------------------------------------------------------------------
+ 119:vec9_io.c     **** // Software clock / PerIrq init
+ 120:vec9_io.c     **** //-----------------------------------------------------------------------
+ 121:vec9_io.c     **** //-----------------------------------------------------------------------
+ 122:vec9_io.c     **** 
+ 123:vec9_io.c     **** static void InitSoftclock(void)
+ 124:vec9_io.c     **** // We're using PORTE's timer 0 for this.
+ 125:vec9_io.c     **** // Look at the value of SECOND define, and set number of periodic interrupt requests per second.
+ 126:vec9_io.c     **** // Affects watchdog, too.
+ 127:vec9_io.c     **** {
+ 128:vec9_io.c     **** 	systemTicks=0;
+ 129:vec9_io.c     **** 
+ 130:vec9_io.c     **** 	PR.PRPE&=~PR_TC0_bm;		// Turn on timer counter zero for porte
+ 131:vec9_io.c     **** 
+ 132:vec9_io.c     **** 	TCE0.CCA=0;						// Compare match 0
+ 133:vec9_io.c     **** 	TCE0.CNT=0;						// Set Count Value to 0.
+ 134:vec9_io.c     **** 	TCE0.PER=(F_CPU/SECOND);		// Set period for this timer (max count)
+ 135:vec9_io.c     **** 
+ 136:vec9_io.c     **** 	TCE0.CTRLB=0;					// No compares/captures enabled, and no waveforms
+ 137:vec9_io.c     **** 
+ 138:vec9_io.c     **** 	TCE0.INTFLAGS=0xFF;						// Clear the interrupt flags
+ 139:vec9_io.c     **** //	TCE0.INTCTRLA=TC_OVFINTLVL_HI_gc;		// Set wdt overflow interrupt (high priority)
+ 140:vec9_io.c     **** 	TCE0.INTCTRLA=TC_OVFINTLVL_LO_gc;		// Set wdt overflow interrupt (low priority)
+ 141:vec9_io.c     **** 	TCE0.INTCTRLB=0;						// No CC ints
+ 142:vec9_io.c     **** 	TCE0.CTRLA=TC_CLKSEL_DIV1_gc;			// Start the timer with a clock division of 1.
+ 143:vec9_io.c     **** }
+ 144:vec9_io.c     **** 
+ 145:vec9_io.c     **** //-----------------------------------------------------------------------
+ 146:vec9_io.c     **** //-----------------------------------------------------------------------
+ 147:vec9_io.c     **** // Periodic Interrupt Request
+ 148:vec9_io.c     **** //-----------------------------------------------------------------------
+ 149:vec9_io.c     **** //-----------------------------------------------------------------------
+ 150:vec9_io.c     **** 
+ 151:vec9_io.c     **** ISR(TCE0_OVF_vect)
+ 152:vec9_io.c     **** {
+ 153:vec9_io.c     **** 	systemTicks++;					// Increment the system ticks.
+ 154:vec9_io.c     **** }
+ 155:vec9_io.c     **** 
+ 156:vec9_io.c     **** //-----------------------------------------------------------------------
+ 157:vec9_io.c     **** //-----------------------------------------------------------------------
+ 158:vec9_io.c     **** // Protected Register Access Functions
+ 159:vec9_io.c     **** //-----------------------------------------------------------------------
+ 160:vec9_io.c     **** //-----------------------------------------------------------------------
+ 161:vec9_io.c     **** 
+ 162:vec9_io.c     **** static void CCPWrite(volatile uint8_t * address, uint8_t value)
+ 163:vec9_io.c     **** // Assembly helper function which writes the Config Change Protection register and immediately the 
+ 164:vec9_io.c     **** // NOTE -- this only writes protected IO registers, not SPM/LPM.
+ 165:vec9_io.c     **** // Cribbed more or less from AVR1003, with the non-avrgcc #if statements taken out.
+ 166:vec9_io.c     **** {
+  16               		.loc 1 166 0
+  17               		.cfi_startproc
+  18               	.LVL0:
+  19 0000 0F93      		push r16
+  20               	.LCFI0:
+  21               		.cfi_def_cfa_offset 3
+  22               		.cfi_offset 16, -2
+  23               	/* prologue: function */
+  24               	/* frame size = 0 */
+  25               	/* stack size = 1 */
+  26               	.L__stack_usage = 1
+ 167:vec9_io.c     **** 	unsigned char
+ 168:vec9_io.c     **** 		sreg;
+ 169:vec9_io.c     **** 
+ 170:vec9_io.c     **** 	sreg=SREG;		// Pause interrupts
+  27               		.loc 1 170 0
+  28 0002 2FB7      		in r18,__SREG__
+  29               	.LVL1:
+ 171:vec9_io.c     **** 	cli();
+  30               		.loc 1 171 0
+  31               	/* #APP */
+  32               	 ;  171 "vec9_io.c" 1
+  33 0004 F894      		cli
+  34               	 ;  0 "" 2
+  35               	.LVL2:
+ 172:vec9_io.c     **** 
+ 173:vec9_io.c     **** 	volatile uint8_t * tmpAddr = address;	// Redefine this locally (look this up, not sure why)
+ 174:vec9_io.c     **** 	RAMPZ = 0;								// Clear third Z indirect addressing reg
+  36               		.loc 1 174 0
+  37               	/* #NOAPP */
+  38 0006 1BBE      		out __RAMPZ__,__zero_reg__
+ 175:vec9_io.c     **** 
+ 176:vec9_io.c     **** 	asm volatile(
+  39               		.loc 1 176 0
+  40               	/* #APP */
+  41               	 ;  176 "vec9_io.c" 1
+  42 0008 FC01      		movw r30,  r24
+  43 000a 08ED      		ldi  r16,  216
+  44 000c 04BF      		out   52, r16
+  45 000e 6083      		st     Z,  r22
+  46               		
+  47               	 ;  0 "" 2
+ 177:vec9_io.c     **** 		"movw r30,  %0"	      "\n\t"		// Store our temp address
+ 178:vec9_io.c     **** 		"ldi  r16,  %2"	      "\n\t"		// Store our CCP signature
+ 179:vec9_io.c     **** 		"out   %3, r16"	      "\n\t"		// Write signature to CCP register
+ 180:vec9_io.c     **** 		"st     Z,  %1"       "\n\t"		// Put the passed value into the passed address (happens one cycle 
+ 181:vec9_io.c     **** 		:
+ 182:vec9_io.c     **** 		: "r" (tmpAddr), "r" (value), "M" (CCP_IOREG_gc), "i" (&CCP)		// variables for above
+ 183:vec9_io.c     **** 		: "r16", "r30", "r31"												// Clobber list
+ 184:vec9_io.c     **** 		);
+ 185:vec9_io.c     **** 
+ 186:vec9_io.c     **** 	SREG=sreg;		// Restore interrupts
+  48               		.loc 1 186 0
+  49               	/* #NOAPP */
+  50 0010 2FBF      		out __SREG__,r18
+  51               	/* epilogue start */
+ 187:vec9_io.c     **** }
+  52               		.loc 1 187 0
+  53 0012 0F91      		pop r16
+  54 0014 0895      		ret
+  55               		.cfi_endproc
+  56               	.LFE6:
+  58               	.global	UartPutChar
+  60               	UartPutChar:
+  61               	.LFB7:
+ 188:vec9_io.c     **** 
+ 189:vec9_io.c     **** //-----------------------------------------------------------------------
+ 190:vec9_io.c     **** //-----------------------------------------------------------------------
+ 191:vec9_io.c     **** // Printf support functions
+ 192:vec9_io.c     **** //-----------------------------------------------------------------------
+ 193:vec9_io.c     **** //-----------------------------------------------------------------------
+ 194:vec9_io.c     **** 
+ 195:vec9_io.c     **** int UartPutChar(char c, FILE *stream)		// Associating this with FILE makes this link to stdout and 
+ 196:vec9_io.c     **** // Note -- this implementation pulls in ALL KINDS of garbage from standard C libraries and leads to
+ 197:vec9_io.c     **** // Re-write it when you have time.
+ 198:vec9_io.c     **** {
+  62               		.loc 1 198 0
+  63               		.cfi_startproc
+  64               	.LVL3:
+  65 0016 CF93      		push r28
+  66               	.LCFI1:
+  67               		.cfi_def_cfa_offset 3
+  68               		.cfi_offset 28, -2
+  69               	/* prologue: function */
+  70               	/* frame size = 0 */
+  71               	/* stack size = 1 */
+  72               	.L__stack_usage = 1
+  73 0018 C82F      		mov r28,r24
+ 199:vec9_io.c     **** 	if(c=='\n')
+  74               		.loc 1 199 0
+  75 001a 8A30      		cpi r24,lo8(10)
+  76 001c 01F4      		brne .L5
+ 200:vec9_io.c     **** 	{
+ 201:vec9_io.c     **** 		UartPutChar('\r', stream);				// Always follow a new line with a carriage return.
+  77               		.loc 1 201 0
+  78 001e 8DE0      		ldi r24,lo8(13)
+  79               	.LVL4:
+  80 0020 0E94 0000 		call UartPutChar
+  81               	.LVL5:
+  82               	.L5:
+ 202:vec9_io.c     **** 	}
+ 203:vec9_io.c     **** 
+ 204:vec9_io.c     **** 	while(!(USARTF0.STATUS&USART_DREIF_bm))		// Hang here until there is room in the transmit buffer (
+  83               		.loc 1 204 0 discriminator 1
+  84 0024 8091 A10B 		lds r24,2977
+  85 0028 85FF      		sbrs r24,5
+  86 002a 00C0      		rjmp .L5
+ 205:vec9_io.c     **** 	{
+ 206:vec9_io.c     **** 		;
+ 207:vec9_io.c     **** 	}
+ 208:vec9_io.c     **** 	USARTF0.DATA = c;							// Then xmit the character you've been passed.
+  87               		.loc 1 208 0
+  88 002c C093 A00B 		sts 2976,r28
+ 209:vec9_io.c     **** 
+ 210:vec9_io.c     **** 	return(0);									// Returning an int makes this function play with printf() (no errors).
+ 211:vec9_io.c     **** }
+  89               		.loc 1 211 0
+  90 0030 80E0      		ldi r24,0
+  91 0032 90E0      		ldi r25,0
+  92               	/* epilogue start */
+  93 0034 CF91      		pop r28
+  94               	.LVL6:
+  95 0036 0895      		ret
+  96               		.cfi_endproc
+  97               	.LFE7:
+ 100               	SetOutputs:
+ 101               	.LFB19:
+ 212:vec9_io.c     **** 
+ 213:vec9_io.c     **** //-----------------------------------------------------------------------
+ 214:vec9_io.c     **** //-----------------------------------------------------------------------
+ 215:vec9_io.c     **** // Serial Functions
+ 216:vec9_io.c     **** //-----------------------------------------------------------------------
+ 217:vec9_io.c     **** //-----------------------------------------------------------------------
+ 218:vec9_io.c     **** // NOTE:  It might be smart to dump anything partially received when the transmitter begins transmi
+ 219:vec9_io.c     **** // These talk to the gateway.
+ 220:vec9_io.c     **** 
+ 221:vec9_io.c     **** #define		SERIAL_USART		USARTF0
+ 222:vec9_io.c     **** #define		MAX_RX_FIFO_BYTES	64
+ 223:vec9_io.c     **** 
+ 224:vec9_io.c     **** static volatile unsigned char
+ 225:vec9_io.c     **** 	txBuffer[16],
+ 226:vec9_io.c     **** 	txBufferIndex,
+ 227:vec9_io.c     **** 	txBytesToSend,
+ 228:vec9_io.c     **** 	rxFifo[MAX_RX_FIFO_BYTES],
+ 229:vec9_io.c     **** 	fifoReadPointer,
+ 230:vec9_io.c     **** 	fifoWritePointer,
+ 231:vec9_io.c     **** 	dump,				// Keep me volatile
+ 232:vec9_io.c     **** 	bytesInRxFifo;
+ 233:vec9_io.c     **** 
+ 234:vec9_io.c     **** ISR(USARTF0_RXC_vect)
+ 235:vec9_io.c     **** // When we receive a byte via serial, stick it in the FIFO.
+ 236:vec9_io.c     **** {
+ 237:vec9_io.c     **** 	if(bytesInRxFifo<MAX_RX_FIFO_BYTES)
+ 238:vec9_io.c     **** 	{
+ 239:vec9_io.c     **** 		rxFifo[fifoWritePointer]=SERIAL_USART.DATA;	// Put data in fifo at current write pointer
+ 240:vec9_io.c     **** 		fifoWritePointer++;							// Move write pointer forward
+ 241:vec9_io.c     **** 		if(fifoWritePointer>=MAX_RX_FIFO_BYTES)		// Roll write pointer around end of ring buffer if neede
+ 242:vec9_io.c     **** 		{
+ 243:vec9_io.c     **** 			fifoWritePointer=0;
+ 244:vec9_io.c     **** 		}
+ 245:vec9_io.c     **** 		bytesInRxFifo++;							// One more byte in the fifo
+ 246:vec9_io.c     **** 	}
+ 247:vec9_io.c     **** 	else
+ 248:vec9_io.c     **** 	{
+ 249:vec9_io.c     **** 		dump=SERIAL_USART.DATA;		// For whatever reason, writing a one to the flag here doesn't seem to w
+ 250:vec9_io.c     **** 	}
+ 251:vec9_io.c     **** }
+ 252:vec9_io.c     **** 
+ 253:vec9_io.c     **** static bool	RxFifoNotEmpty(void)
+ 254:vec9_io.c     **** // Return true if there are unread data in the fifo
+ 255:vec9_io.c     **** {
+ 256:vec9_io.c     **** 	unsigned char
+ 257:vec9_io.c     **** 		sreg;
+ 258:vec9_io.c     **** 	bool
+ 259:vec9_io.c     **** 		retVal;
+ 260:vec9_io.c     **** 
+ 261:vec9_io.c     **** 	sreg=SREG;
+ 262:vec9_io.c     **** 	cli();
+ 263:vec9_io.c     **** 
+ 264:vec9_io.c     **** 	retVal=false;
+ 265:vec9_io.c     **** 	if(bytesInRxFifo)	// Got anything in fifo?
+ 266:vec9_io.c     **** 	{
+ 267:vec9_io.c     **** 		retVal=true;
+ 268:vec9_io.c     **** 	}
+ 269:vec9_io.c     **** 
+ 270:vec9_io.c     **** 	SREG=sreg;
+ 271:vec9_io.c     **** 	return(retVal);
+ 272:vec9_io.c     **** }
+ 273:vec9_io.c     **** 
+ 274:vec9_io.c     **** unsigned char GetByteFromRxFifo(void)
+ 275:vec9_io.c     **** // Returns bytes from the RS485 fifo in the order they were collected.
+ 276:vec9_io.c     **** {
+ 277:vec9_io.c     **** 	unsigned char
+ 278:vec9_io.c     **** 		sreg,
+ 279:vec9_io.c     **** 		theByte;
+ 280:vec9_io.c     **** 
+ 281:vec9_io.c     **** 	sreg=SREG;
+ 282:vec9_io.c     **** 	cli();
+ 283:vec9_io.c     **** 
+ 284:vec9_io.c     **** 	if(bytesInRxFifo)	// Got anything in fifo?
+ 285:vec9_io.c     **** 	{
+ 286:vec9_io.c     **** 		theByte=rxFifo[fifoReadPointer];
+ 287:vec9_io.c     **** 		fifoReadPointer++;							// Move pointer forward
+ 288:vec9_io.c     **** 		if(fifoReadPointer>=MAX_RX_FIFO_BYTES)		// Roll pointer around end of ring buffer if needed
+ 289:vec9_io.c     **** 		{
+ 290:vec9_io.c     **** 			fifoReadPointer=0;
+ 291:vec9_io.c     **** 		}
+ 292:vec9_io.c     **** 		bytesInRxFifo--;							// One less byte in the fifo
+ 293:vec9_io.c     **** 
+ 294:vec9_io.c     **** 		SREG=sreg;
+ 295:vec9_io.c     **** 		return(theByte);
+ 296:vec9_io.c     **** 	}
+ 297:vec9_io.c     **** 	else
+ 298:vec9_io.c     **** 	{
+ 299:vec9_io.c     **** 		SREG=sreg;
+ 300:vec9_io.c     **** 		return(0);		// Should not happen.  If we call this when there are no bytes in the fifo, return 0
+ 301:vec9_io.c     **** 	}
+ 302:vec9_io.c     **** }
+ 303:vec9_io.c     **** 
+ 304:vec9_io.c     **** static void InitSerialFifos(void)
+ 305:vec9_io.c     **** {
+ 306:vec9_io.c     **** 	unsigned char
+ 307:vec9_io.c     **** 		sreg;
+ 308:vec9_io.c     **** 
+ 309:vec9_io.c     **** 	sreg=SREG;
+ 310:vec9_io.c     **** 	cli();
+ 311:vec9_io.c     **** 
+ 312:vec9_io.c     **** 	bytesInRxFifo=0;					// Init ring buffer for RS485 byte reception
+ 313:vec9_io.c     **** 	fifoWritePointer=0;
+ 314:vec9_io.c     **** 	fifoReadPointer=0;
+ 315:vec9_io.c     **** 	txBufferIndex=0;
+ 316:vec9_io.c     **** 	txBytesToSend=0;
+ 317:vec9_io.c     **** 	SERIAL_USART.CTRLA=USART_RXCINTLVL_MED_gc;	// Interrupts enabled, medium priority
+ 318:vec9_io.c     **** 
+ 319:vec9_io.c     **** 	SREG=sreg;
+ 320:vec9_io.c     **** }
+ 321:vec9_io.c     **** 
+ 322:vec9_io.c     **** //-----------------------------------------------------------------------
+ 323:vec9_io.c     **** //-----------------------------------------------------------------------
+ 324:vec9_io.c     **** // Switch functions:
+ 325:vec9_io.c     **** //-----------------------------------------------------------------------
+ 326:vec9_io.c     **** //-----------------------------------------------------------------------
+ 327:vec9_io.c     **** 
+ 328:vec9_io.c     **** static unsigned int
+ 329:vec9_io.c     **** 	keyState,
+ 330:vec9_io.c     **** 	newKeys,
+ 331:vec9_io.c     **** 	newKeysReleased;
+ 332:vec9_io.c     **** 
+ 333:vec9_io.c     **** static void InitSwitches(void)
+ 334:vec9_io.c     **** // Sets up user input -- any physical switches which need to be debounced.
+ 335:vec9_io.c     **** // PB0-7 and PC0-4 are switch inputs
+ 336:vec9_io.c     **** // PE2 is our test mode switch input
+ 337:vec9_io.c     **** // NOTE -- we invert the data coming in from these pins, so a pressed switch is read as a ONE later
+ 338:vec9_io.c     **** // The pushbuttons (PC2 and PC3) are NC, so DON'T invert them.
+ 339:vec9_io.c     **** // NOTE -- For PORTB to work right, JTAG gotta go.
+ 340:vec9_io.c     **** {
+ 341:vec9_io.c     **** 	PORTB.DIRCLR=0xFF;									// All bits
+ 342:vec9_io.c     **** 	PORTCFG.MPCMASK=0xFF;								// Configure these pins on this port next time we write the config re
+ 343:vec9_io.c     **** 	PORTB.PIN0CTRL=PORT_INVEN_bm|PORT_OPC_PULLUP_gc;	// Set them to be pulled up and inverted
+ 344:vec9_io.c     **** 
+ 345:vec9_io.c     **** 	PORTC.DIRCLR=0x1F;									// Bottom five bits
+ 346:vec9_io.c     **** //	PORTCFG.MPCMASK=0x1F;								// Configure these pins on this port next time we write the config 
+ 347:vec9_io.c     **** 	PORTC.PIN0CTRL=PORT_INVEN_bm|PORT_OPC_PULLUP_gc;	// Set them to be pulled up and inverted
+ 348:vec9_io.c     **** 	PORTC.PIN1CTRL=PORT_INVEN_bm|PORT_OPC_PULLUP_gc;	// Set them to be pulled up and inverted
+ 349:vec9_io.c     **** 	PORTC.PIN2CTRL=PORT_OPC_PULLUP_gc;					// Set them to be pulled up
+ 350:vec9_io.c     **** 	PORTC.PIN3CTRL=PORT_OPC_PULLUP_gc;					// Set them to be pulled up
+ 351:vec9_io.c     **** 	PORTC.PIN4CTRL=PORT_INVEN_bm|PORT_OPC_PULLUP_gc;	// Set them to be pulled up and inverted
+ 352:vec9_io.c     **** 
+ 353:vec9_io.c     **** 	PORTE.DIRCLR=(1<<2);								// PE2 to input
+ 354:vec9_io.c     **** 	PORTE.PIN2CTRL=PORT_INVEN_bm|PORT_OPC_PULLUP_gc;	// Set to be pulled up and inverted
+ 355:vec9_io.c     **** 
+ 356:vec9_io.c     **** 	keyState=0;		// No keys pressed
+ 357:vec9_io.c     **** 	newKeys=0;		// No keys new
+ 358:vec9_io.c     **** 
+ 359:vec9_io.c     **** 	SetTimer(TIMER_DEBOUNCE,(SECOND/64));
+ 360:vec9_io.c     **** }
+ 361:vec9_io.c     **** 
+ 362:vec9_io.c     **** 
+ 363:vec9_io.c     **** static void HandleSwitches(void)
+ 364:vec9_io.c     **** // Read input pins, debounce, and flag newly-appeared keys.
+ 365:vec9_io.c     **** // NOTE -- because the inputs have been inverted, they are already positive true
+ 366:vec9_io.c     **** // NOTE -- For PORTB to work right, JTAG must be disabed.
+ 367:vec9_io.c     **** {
+ 368:vec9_io.c     **** 	static unsigned int
+ 369:vec9_io.c     **** 		lastKeyState;
+ 370:vec9_io.c     **** 
+ 371:vec9_io.c     **** 	lastKeyState=keyState;					// Record old keystate for comparison's sake
+ 372:vec9_io.c     **** 
+ 373:vec9_io.c     **** 	if(CheckTimer(TIMER_DEBOUNCE))
+ 374:vec9_io.c     **** 	{
+ 375:vec9_io.c     **** 		keyState=PORTB.IN;								// Grab all PORTB inputs
+ 376:vec9_io.c     **** 		keyState|=((unsigned int)PORTC.IN&0x1F)<<8;		// Grab bottom 5 PORTC
+ 377:vec9_io.c     **** 
+ 378:vec9_io.c     **** 		if(PORTE.IN&(1<<2))		// Check test switch, alone on this port
+ 379:vec9_io.c     **** 		{
+ 380:vec9_io.c     **** 			keyState|=Im_TEST;
+ 381:vec9_io.c     **** 		}
+ 382:vec9_io.c     **** 
+ 383:vec9_io.c     **** 		SetTimer(TIMER_DEBOUNCE,(SECOND/64));
+ 384:vec9_io.c     **** 	}
+ 385:vec9_io.c     **** 
+ 386:vec9_io.c     **** 	newKeys=((keyState^lastKeyState)&(keyState));			// Flag the keys which have been pressed since the
+ 387:vec9_io.c     **** 	newKeysReleased=lastKeyState&(keyState^lastKeyState);	// And the ones immediately un-pressed
+ 388:vec9_io.c     **** }
+ 389:vec9_io.c     **** 
+ 390:vec9_io.c     **** //-----------------------------------------------------------------------
+ 391:vec9_io.c     **** //-----------------------------------------------------------------------
+ 392:vec9_io.c     **** // ADC Handling:
+ 393:vec9_io.c     **** //-----------------------------------------------------------------------
+ 394:vec9_io.c     **** //-----------------------------------------------------------------------
+ 395:vec9_io.c     **** // ADC has serious errata in this device -- see DS.
+ 396:vec9_io.c     **** // We must used the signed mode (even though we are single ended) and our VREF is external and set 
+ 397:vec9_io.c     **** // This means that we have 11 bit accuracy and not 12, and there are some other weirdnesses too.
+ 398:vec9_io.c     **** // For instance, since we are running differential, it is helpful to tie a PORT pin to ground and u
+ 399:vec9_io.c     **** 
+ 400:vec9_io.c     **** // Some helpful posts:
+ 401:vec9_io.c     **** // http://blog.frankvh.com/2010/01/03/atmel-xmega-adc-problems-solutions/
+ 402:vec9_io.c     **** // http://www.bostonandroid.com/manuals/xmega-precision-adc-howto.html
+ 403:vec9_io.c     **** 
+ 404:vec9_io.c     **** // Thu Nov 17 15:06:04 EST 2011
+ 405:vec9_io.c     **** // As far as I can tell, a single conversion without gain takes 6 adc clock cycles
+ 406:vec9_io.c     **** // So, at 125hKz adc clock, throwing out 4 samples and averaging 32, each source we read takes abou
+ 407:vec9_io.c     **** 
+ 408:vec9_io.c     **** // NOTE -- decent stability at /64
+ 409:vec9_io.c     **** 
+ 410:vec9_io.c     **** // Sat Feb  2 16:34:39 EST 2013
+ 411:vec9_io.c     **** // Switched to -AU series xmegas.  In theory these fix all the old ADC problems.  We'll see...
+ 412:vec9_io.c     **** // Sample time is 7 adc clock cycles.  So at 20MHz / 512 (39kHz) we have 0.18mSec per sample.
+ 413:vec9_io.c     **** // At 36 samples per source, we have 6.5mSec per source
+ 414:vec9_io.c     **** // With 5 sources we'd have 32mSec to get everything (or 31Hz update rate).
+ 415:vec9_io.c     **** // 2 sources is 77 times a second.
+ 416:vec9_io.c     **** 
+ 417:vec9_io.c     **** #define		SAMPLES_TO_ADD		8		// Don't exceed an int adding these up
+ 418:vec9_io.c     **** #define		SAMPLES_TO_AVERAGE	8		// Then divide by this.  Can get oversampling if needed.
+ 419:vec9_io.c     **** #define		SAMPLES_TO_TOSS		4		// Throw out this many every time we change the mux
+ 420:vec9_io.c     **** 
+ 421:vec9_io.c     **** enum									// Things our ADC is keeping track of
+ 422:vec9_io.c     **** 	{
+ 423:vec9_io.c     **** 		ADC_YOKE_PITCH=0,
+ 424:vec9_io.c     **** 		ADC_YOKE_ROLL,
+ 425:vec9_io.c     **** 		NUM_ADC,
+ 426:vec9_io.c     **** 	};
+ 427:vec9_io.c     **** 
+ 428:vec9_io.c     **** static unsigned int
+ 429:vec9_io.c     **** 	adcResults[NUM_ADC];	// Store processed results here
+ 430:vec9_io.c     **** static bool
+ 431:vec9_io.c     **** 	newAdcResult[NUM_ADC];	// Flags which tell when an ADC result is new
+ 432:vec9_io.c     **** static unsigned char
+ 433:vec9_io.c     **** 	currentAdcSource;			// Which ADC input are we looking at?
+ 434:vec9_io.c     **** 
+ 435:vec9_io.c     **** static unsigned long
+ 436:vec9_io.c     **** 	adcResultTemp;			// Accumulator for averaging/oversampling
+ 437:vec9_io.c     **** static unsigned char
+ 438:vec9_io.c     **** 	adcSampleCount;			// How many samples have we pulled in for this particular measurement?
+ 439:vec9_io.c     **** 
+ 440:vec9_io.c     **** static void InitAdc(void)
+ 441:vec9_io.c     **** // For ADCA.
+ 442:vec9_io.c     **** {
+ 443:vec9_io.c     **** 	unsigned char
+ 444:vec9_io.c     **** 		i;
+ 445:vec9_io.c     **** 
+ 446:vec9_io.c     **** 	// Init ADC hardware:
+ 447:vec9_io.c     **** 
+ 448:vec9_io.c     **** 	PR.PRPA&=~PR_ADC_bm;									// Make sure ADC is on
+ 449:vec9_io.c     **** 	PORTA.DIRCLR=0x0F;										// PORTA analog inputs to inputs
+ 450:vec9_io.c     **** 
+ 451:vec9_io.c     **** //	ADCA.CTRLB=ADC_CONVMODE_bm|ADC_RESOLUTION_12BIT_gc;		// Set signed mode, 12 bit right justified,
+ 452:vec9_io.c     **** 	ADCA.CTRLB=0x10;										// Same as above, no "convmode" bitmask
+ 453:vec9_io.c     **** 	ADCA.REFCTRL=ADC_REFSEL_AREFA_gc;						// External reference A, bandgap and temp disabled
+ 454:vec9_io.c     **** //	ADCA.PRESCALER=ADC_PRESCALER_DIV256_gc;					// 16MHz divided by 256 = 62.5kHz  (see notes)	-- OG
+ 455:vec9_io.c     **** //	ADCA.PRESCALER=ADC_PRESCALER_DIV128_gc;					// 16MHz divided by 128 = 125kHz  (see notes)	-- thi
+ 456:vec9_io.c     **** 	ADCA.PRESCALER=ADC_PRESCALER_DIV512_gc;					// See notes	-- real slow for high impedance
+ 457:vec9_io.c     **** 
+ 458:vec9_io.c     **** 	ADCA.CH0.CTRL=ADC_CH_INPUTMODE_DIFF_gc;							// Differential input, no gain.
+ 459:vec9_io.c     **** 	ADCA.CH0.MUXCTRL=ADC_CH_MUXPOS_PIN2_gc|ADC_CH_MUXNEG_PIN3_gc;	// Positive input is PIN2 (PA2), Neg
+ 460:vec9_io.c     **** 	ADCA.CH0.INTCTRL=0;												// No interrupts
+ 461:vec9_io.c     **** 
+ 462:vec9_io.c     **** 	ADCA.CTRLA=ADC_ENABLE_bm;								// Enable the ADC
+ 463:vec9_io.c     **** 
+ 464:vec9_io.c     **** 	// Init our application ADC variables:
+ 465:vec9_io.c     **** 
+ 466:vec9_io.c     **** 	adcResultTemp=0;	// Zero our accumulator
+ 467:vec9_io.c     **** 	adcSampleCount=0;	// Zero oversample/average counter
+ 468:vec9_io.c     **** 
+ 469:vec9_io.c     **** 	for(i=0;i<NUM_ADC;i++)	// Zero results
+ 470:vec9_io.c     **** 	{
+ 471:vec9_io.c     **** 		adcResults[i]=0;
+ 472:vec9_io.c     **** 		newAdcResult[i]=false;
+ 473:vec9_io.c     **** 	}
+ 474:vec9_io.c     **** 
+ 475:vec9_io.c     **** 	currentAdcSource=0;	// Look at the first signal source
+ 476:vec9_io.c     **** 
+ 477:vec9_io.c     **** 	ADCA.CH0.CTRL|=ADC_CH_START_bm; 	// Start conversion on channel 0
+ 478:vec9_io.c     **** 
+ 479:vec9_io.c     **** }
+ 480:vec9_io.c     **** 
+ 481:vec9_io.c     **** static void UpdateAdc(void)
+ 482:vec9_io.c     **** // Scan through positioner, pressure, get the results and put them in their respective result regis
+ 483:vec9_io.c     **** // Motor current monitor is done on its own time (should go fast, doesn't need accuracy)
+ 484:vec9_io.c     **** {
+ 485:vec9_io.c     **** 	unsigned char
+ 486:vec9_io.c     **** 		i;
+ 487:vec9_io.c     **** 	int
+ 488:vec9_io.c     **** 		temp;
+ 489:vec9_io.c     **** 	static unsigned char
+ 490:vec9_io.c     **** 		tossCounter=SAMPLES_TO_TOSS;
+ 491:vec9_io.c     **** 
+ 492:vec9_io.c     **** 	for(i=0;i<NUM_ADC;i++)		// New results only stay new for a loop
+ 493:vec9_io.c     **** 	{
+ 494:vec9_io.c     **** 		newAdcResult[i]=false;
+ 495:vec9_io.c     **** 	}
+ 496:vec9_io.c     **** 
+ 497:vec9_io.c     **** 	if(ADCA.CH0.INTFLAGS&ADC_CH0IF_bm)	// Got a complete conversion on CH0?
+ 498:vec9_io.c     **** 	{
+ 499:vec9_io.c     **** 		temp=ADCA.CH0RES;			// Get result
+ 500:vec9_io.c     **** 
+ 501:vec9_io.c     **** 		if(tossCounter)				// Throw out a couple results while we let mux settle (may not be necessary, b
+ 502:vec9_io.c     **** 		{
+ 503:vec9_io.c     **** 			tossCounter--;
+ 504:vec9_io.c     **** 		}
+ 505:vec9_io.c     **** 		else
+ 506:vec9_io.c     **** 		{
+ 507:vec9_io.c     **** 			if(temp<0)					// Pin results positive
+ 508:vec9_io.c     **** 			{
+ 509:vec9_io.c     **** 				temp=0;
+ 510:vec9_io.c     **** 			}
+ 511:vec9_io.c     **** 
+ 512:vec9_io.c     **** 			adcResultTemp+=temp;		// Add to accumulator
+ 513:vec9_io.c     **** 			adcSampleCount++;			// One more sample gathered
+ 514:vec9_io.c     **** 
+ 515:vec9_io.c     **** 			if(adcSampleCount>=SAMPLES_TO_ADD)	// Got enough samples?
+ 516:vec9_io.c     **** 			{
+ 517:vec9_io.c     **** 				adcResults[currentAdcSource]=(adcResultTemp/SAMPLES_TO_AVERAGE);	// export reading, with averag
+ 518:vec9_io.c     **** 				newAdcResult[currentAdcSource]=true;								// Let program know we have a new ADC reading
+ 519:vec9_io.c     **** 
+ 520:vec9_io.c     **** 				adcSampleCount=0;						// Restart accumulator
+ 521:vec9_io.c     **** 				tossCounter=SAMPLES_TO_TOSS;			// Ignore initial samples after switching the mux
+ 522:vec9_io.c     **** 				adcResultTemp=0;						// Clear temp register
+ 523:vec9_io.c     **** 
+ 524:vec9_io.c     **** 				currentAdcSource++;						// Get our next signal source
+ 525:vec9_io.c     **** 				if(currentAdcSource>=NUM_ADC)			// Roll it around
+ 526:vec9_io.c     **** 				{
+ 527:vec9_io.c     **** 					currentAdcSource=0;
+ 528:vec9_io.c     **** 				}
+ 529:vec9_io.c     **** 
+ 530:vec9_io.c     **** 				switch(currentAdcSource)		// Set mux to the next signal source
+ 531:vec9_io.c     **** 				{
+ 532:vec9_io.c     **** 					case ADC_YOKE_PITCH:											// PA2
+ 533:vec9_io.c     **** 					ADCA.CH0.CTRL=ADC_CH_INPUTMODE_DIFF_gc;							// Differential input, no gain.
+ 534:vec9_io.c     **** 					ADCA.CH0.MUXCTRL=ADC_CH_MUXPOS_PIN2_gc|ADC_CH_MUXNEG_PIN3_gc;	// Positive input is PIN2 (PA2),
+ 535:vec9_io.c     **** 					break;
+ 536:vec9_io.c     **** 
+ 537:vec9_io.c     **** 					case ADC_YOKE_ROLL:												// PA1
+ 538:vec9_io.c     **** 					ADCA.CH0.CTRL=ADC_CH_INPUTMODE_DIFF_gc;							// Differential input, no gain.
+ 539:vec9_io.c     **** 					ADCA.CH0.MUXCTRL=ADC_CH_MUXPOS_PIN1_gc|ADC_CH_MUXNEG_PIN3_gc;	// Positive input is PIN1 (PA1),
+ 540:vec9_io.c     **** 					break;
+ 541:vec9_io.c     **** 
+ 542:vec9_io.c     **** 					default:
+ 543:vec9_io.c     **** 					// should probably either wdr or at least reset ADC
+ 544:vec9_io.c     **** 					// *** Bad execution ***
+ 545:vec9_io.c     **** 					break;
+ 546:vec9_io.c     **** 				}
+ 547:vec9_io.c     **** 			}
+ 548:vec9_io.c     **** 
+ 549:vec9_io.c     **** 			ADCA.CH0.INTFLAGS|=ADC_CH0IF_bm;	// Clear flag
+ 550:vec9_io.c     **** 			ADCA.CH0.CTRL|=ADC_CH_START_bm; 	// Start conversion on channel 0
+ 551:vec9_io.c     **** 		}
+ 552:vec9_io.c     **** 	}
+ 553:vec9_io.c     **** }
+ 554:vec9_io.c     **** 
+ 555:vec9_io.c     **** 
+ 556:vec9_io.c     **** //-----------------------------------------------------------------------
+ 557:vec9_io.c     **** //-----------------------------------------------------------------------
+ 558:vec9_io.c     **** // Output Handling
+ 559:vec9_io.c     **** //-----------------------------------------------------------------------
+ 560:vec9_io.c     **** //-----------------------------------------------------------------------
+ 561:vec9_io.c     **** #define		SER_CLK_MASK	(1<<6)		// On PORTA
+ 562:vec9_io.c     **** #define		SER_DATA_MASK	(1<<7)		// On PORTA
+ 563:vec9_io.c     **** 
+ 564:vec9_io.c     **** static unsigned char
+ 565:vec9_io.c     **** 	outputByteHigh,
+ 566:vec9_io.c     **** 	outputByteMiddle,
+ 567:vec9_io.c     **** 	outputByteLow;
+ 568:vec9_io.c     **** 
+ 569:vec9_io.c     **** static void InitSerialLeds(void)
+ 570:vec9_io.c     **** // Clock "off" bits out to the leds on the serial-to-parallel latch, make sure we start with LEDs o
+ 571:vec9_io.c     **** {
+ 572:vec9_io.c     **** 	unsigned char
+ 573:vec9_io.c     **** 		i;
+ 574:vec9_io.c     **** 
+ 575:vec9_io.c     **** 	PORTA.OUTCLR=SER_CLK_MASK;		// Clock starts low
+ 576:vec9_io.c     **** 	PORTA.OUTSET=SER_DATA_MASK;		// Inverted -- a set bit turns the LED off.
+ 577:vec9_io.c     **** 	MACRO_DoTenNops;
+ 578:vec9_io.c     **** 	
+ 579:vec9_io.c     **** 	for(i=0;i<20;i++)
+ 580:vec9_io.c     **** 	{
+ 581:vec9_io.c     **** 		PORTA.OUTCLR=SER_CLK_MASK;		// Bring clock low
+ 582:vec9_io.c     **** 		MACRO_DoTenNops;				// Wait
+ 583:vec9_io.c     **** 		PORTA.OUTSET=SER_DATA_MASK;		// Set data correctly
+ 584:vec9_io.c     **** 		MACRO_DoTenNops;				// Wait
+ 585:vec9_io.c     **** 		PORTA.OUTSET=SER_CLK_MASK;		// Bring clock high (latch in data)
+ 586:vec9_io.c     **** 		MACRO_DoTenNops;				// Wait
+ 587:vec9_io.c     **** 	}
+ 588:vec9_io.c     **** 
+ 589:vec9_io.c     **** 	PORTA.OUTCLR=SER_CLK_MASK;		// Clock ends low
+ 590:vec9_io.c     **** 	PORTA.OUTSET=SER_DATA_MASK;		// Data ends high
+ 591:vec9_io.c     **** }
+ 592:vec9_io.c     **** 
+ 593:vec9_io.c     **** static void InitOutputs(void)
+ 594:vec9_io.c     **** // Turn all output pins to drivers and set them low
+ 595:vec9_io.c     **** {
+ 596:vec9_io.c     **** 	PORTC.OUTCLR=0xE0;
+ 597:vec9_io.c     **** 	PORTC.DIRSET=0xE0;		
+ 598:vec9_io.c     **** 
+ 599:vec9_io.c     **** 	PORTD.OUTCLR=0xFF;		
+ 600:vec9_io.c     **** 	PORTD.DIRSET=0xFF;		
+ 601:vec9_io.c     **** 
+ 602:vec9_io.c     **** 	PORTE.OUTCLR=0x03;		
+ 603:vec9_io.c     **** 	PORTE.DIRSET=0x03;		
+ 604:vec9_io.c     **** 
+ 605:vec9_io.c     **** 	PORTA.OUTCLR=0xF0;		
+ 606:vec9_io.c     **** 	PORTA.DIRSET=0xF0;		
+ 607:vec9_io.c     **** 
+ 608:vec9_io.c     **** 	// Initialize 595 outputs:
+ 609:vec9_io.c     **** 	InitSerialLeds();	
+ 610:vec9_io.c     **** }
+ 611:vec9_io.c     **** 
+ 612:vec9_io.c     **** static void SetSerialLeds(void)
+ 613:vec9_io.c     **** // Sets the LEDs on the 595 based on the status of our output mask
+ 614:vec9_io.c     **** // Outputs of 595:
+ 615:vec9_io.c     **** // ------------------
+ 616:vec9_io.c     **** //	Qa		Green 0
+ 617:vec9_io.c     **** //	Qb		Green 1
+ 618:vec9_io.c     **** //	Qc		Green 2
+ 619:vec9_io.c     **** //	Qd		Green 3
+ 620:vec9_io.c     **** //	Qe		Red 0
+ 621:vec9_io.c     **** //	Qf		Red 1
+ 622:vec9_io.c     **** //	Qg		Red 2
+ 623:vec9_io.c     **** //	Qh		Red 3
+ 624:vec9_io.c     **** // -------------------
+ 625:vec9_io.c     **** // Data propogates from Qa to Qh.  So if you clock in 8 bits, the first bit in ends up in Qh.
+ 626:vec9_io.c     **** // Per the DS:
+ 627:vec9_io.c     **** // "If both clocks are connected together, the shift register is always one clock pulse ahead of th
+ 628:vec9_io.c     **** // Pretty sure this means we need to toggle the clock once more when we're done.
+ 629:vec9_io.c     **** {
+ 630:vec9_io.c     **** 	unsigned char
+ 631:vec9_io.c     **** 		i,
+ 632:vec9_io.c     **** 		serOutputMask;
+ 633:vec9_io.c     **** 		
+ 634:vec9_io.c     **** 	serOutputMask=0xFF;				// Start with mask set to off
+ 635:vec9_io.c     **** 
+ 636:vec9_io.c     **** 	// Put bits into mask in the correct order
+ 637:vec9_io.c     **** 	if(outputByteLow&Om_RED_LED_3)
+ 638:vec9_io.c     **** 	{
+ 639:vec9_io.c     **** 		serOutputMask&=~(1<<0);
+ 640:vec9_io.c     **** 	}
+ 641:vec9_io.c     **** 	if(outputByteLow&Om_RED_LED_2)
+ 642:vec9_io.c     **** 	{
+ 643:vec9_io.c     **** 		serOutputMask&=~(1<<1);
+ 644:vec9_io.c     **** 	}
+ 645:vec9_io.c     **** 	if(outputByteLow&Om_RED_LED_1)
+ 646:vec9_io.c     **** 	{
+ 647:vec9_io.c     **** 		serOutputMask&=~(1<<2);
+ 648:vec9_io.c     **** 	}
+ 649:vec9_io.c     **** 	if(outputByteLow&Om_RED_LED_0)
+ 650:vec9_io.c     **** 	{
+ 651:vec9_io.c     **** 		serOutputMask&=~(1<<3);
+ 652:vec9_io.c     **** 	}
+ 653:vec9_io.c     **** 
+ 654:vec9_io.c     **** 	if(outputByteLow&Om_GREEN_LED_3)
+ 655:vec9_io.c     **** 	{
+ 656:vec9_io.c     **** 		serOutputMask&=~(1<<4);
+ 657:vec9_io.c     **** 	}
+ 658:vec9_io.c     **** 	if(outputByteLow&Om_GREEN_LED_2)
+ 659:vec9_io.c     **** 	{
+ 660:vec9_io.c     **** 		serOutputMask&=~(1<<5);
+ 661:vec9_io.c     **** 	}
+ 662:vec9_io.c     **** 	if(outputByteLow&Om_GREEN_LED_1)
+ 663:vec9_io.c     **** 	{
+ 664:vec9_io.c     **** 		serOutputMask&=~(1<<6);
+ 665:vec9_io.c     **** 	}
+ 666:vec9_io.c     **** 	if(outputByteLow&Om_GREEN_LED_0)
+ 667:vec9_io.c     **** 	{
+ 668:vec9_io.c     **** 		serOutputMask&=~(1<<7);
+ 669:vec9_io.c     **** 	}
+ 670:vec9_io.c     **** 
+ 671:vec9_io.c     **** 	for(i=0;i<8;i++)	// Clock out one byte (clock should always start low)
+ 672:vec9_io.c     **** 	{
+ 673:vec9_io.c     **** 		if(serOutputMask&(1<<i))			// Set data correctly		
+ 674:vec9_io.c     **** 		{
+ 675:vec9_io.c     **** 			PORTA.OUTSET=SER_DATA_MASK;		
+ 676:vec9_io.c     **** 		}
+ 677:vec9_io.c     **** 		else
+ 678:vec9_io.c     **** 		{
+ 679:vec9_io.c     **** 			PORTA.OUTCLR=SER_DATA_MASK;				
+ 680:vec9_io.c     **** 		}
+ 681:vec9_io.c     **** 		PORTA.OUTSET=SER_CLK_MASK;		// Bring clock high (latch in data)
+ 682:vec9_io.c     **** 		PORTA.OUTCLR=SER_CLK_MASK;		// Bring clock low
+ 683:vec9_io.c     **** 	}
+ 684:vec9_io.c     **** 
+ 685:vec9_io.c     **** 	// Clock out one remaining bit to get 595 registers in sync
+ 686:vec9_io.c     **** 
+ 687:vec9_io.c     **** 	PORTA.OUTSET=SER_DATA_MASK;		// Don't care (off)
+ 688:vec9_io.c     **** 	PORTA.OUTSET=SER_CLK_MASK;		// Bring clock high (latch in data)
+ 689:vec9_io.c     **** 	PORTA.OUTCLR=SER_CLK_MASK;		// Bring clock low
+ 690:vec9_io.c     **** }
+ 691:vec9_io.c     **** 
+ 692:vec9_io.c     **** static void SetOutputs(void)
+ 693:vec9_io.c     **** // Sets output bits based on the value of the output masks
+ 694:vec9_io.c     **** {
+ 102               		.loc 1 694 0
+ 103               		.cfi_startproc
+ 104               	/* prologue: function */
+ 105               	/* frame size = 0 */
+ 106               	/* stack size = 0 */
+ 107               	.L__stack_usage = 0
+ 695:vec9_io.c     **** 	// PORTC
+ 696:vec9_io.c     **** 	// -----------------------------------------
+ 697:vec9_io.c     **** 	if(outputByteHigh&Om_FLIGHT_IND_0)
+ 108               		.loc 1 697 0
+ 109 0038 8091 0000 		lds r24,outputByteHigh
+ 698:vec9_io.c     **** 	{
+ 699:vec9_io.c     **** 		PORTC.OUTSET=(1<<5);
+ 110               		.loc 1 699 0
+ 111 003c 90E2      		ldi r25,lo8(32)
+ 697:vec9_io.c     **** 	if(outputByteHigh&Om_FLIGHT_IND_0)
+ 112               		.loc 1 697 0
+ 113 003e 84FF      		sbrs r24,4
+ 114 0040 00C0      		rjmp .L8
+ 115               		.loc 1 699 0
+ 116 0042 9093 4506 		sts 1605,r25
+ 117 0046 00C0      		rjmp .L9
+ 118               	.L8:
+ 700:vec9_io.c     **** 	}
+ 701:vec9_io.c     **** 	else
+ 702:vec9_io.c     **** 	{
+ 703:vec9_io.c     **** 		PORTC.OUTCLR=(1<<5);	
+ 119               		.loc 1 703 0
+ 120 0048 9093 4606 		sts 1606,r25
+ 121               	.L9:
+ 704:vec9_io.c     **** 	}
+ 705:vec9_io.c     **** 	if(outputByteHigh&Om_FLIGHT_IND_1)
+ 706:vec9_io.c     **** 	{
+ 707:vec9_io.c     **** 		PORTC.OUTSET=(1<<6);
+ 122               		.loc 1 707 0
+ 123 004c 90E4      		ldi r25,lo8(64)
+ 705:vec9_io.c     **** 	if(outputByteHigh&Om_FLIGHT_IND_1)
+ 124               		.loc 1 705 0
+ 125 004e 83FF      		sbrs r24,3
+ 126 0050 00C0      		rjmp .L10
+ 127               		.loc 1 707 0
+ 128 0052 9093 4506 		sts 1605,r25
+ 129 0056 00C0      		rjmp .L11
+ 130               	.L10:
+ 708:vec9_io.c     **** 	}
+ 709:vec9_io.c     **** 	else
+ 710:vec9_io.c     **** 	{
+ 711:vec9_io.c     **** 		PORTC.OUTCLR=(1<<6);	
+ 131               		.loc 1 711 0
+ 132 0058 9093 4606 		sts 1606,r25
+ 133               	.L11:
+ 712:vec9_io.c     **** 	}
+ 713:vec9_io.c     **** 	if(outputByteHigh&Om_FLIGHT_IND_2)
+ 714:vec9_io.c     **** 	{
+ 715:vec9_io.c     **** 		PORTC.OUTSET=(1<<7);
+ 134               		.loc 1 715 0
+ 135 005c 90E8      		ldi r25,lo8(-128)
+ 713:vec9_io.c     **** 	if(outputByteHigh&Om_FLIGHT_IND_2)
+ 136               		.loc 1 713 0
+ 137 005e 82FF      		sbrs r24,2
+ 138 0060 00C0      		rjmp .L12
+ 139               		.loc 1 715 0
+ 140 0062 9093 4506 		sts 1605,r25
+ 141 0066 00C0      		rjmp .L13
+ 142               	.L12:
+ 716:vec9_io.c     **** 	}
+ 717:vec9_io.c     **** 	else
+ 718:vec9_io.c     **** 	{
+ 719:vec9_io.c     **** 		PORTC.OUTCLR=(1<<7);	
+ 143               		.loc 1 719 0
+ 144 0068 9093 4606 		sts 1606,r25
+ 145               	.L13:
+ 720:vec9_io.c     **** 	}
+ 721:vec9_io.c     **** 
+ 722:vec9_io.c     **** 	// PORTD
+ 723:vec9_io.c     **** 	// -----------------------------------------
+ 724:vec9_io.c     **** 	if(outputByteHigh&Om_FLIGHT_IND_3)
+ 725:vec9_io.c     **** 	{
+ 726:vec9_io.c     **** 		PORTD.OUTSET=(1<<0);
+ 146               		.loc 1 726 0
+ 147 006c 91E0      		ldi r25,lo8(1)
+ 724:vec9_io.c     **** 	if(outputByteHigh&Om_FLIGHT_IND_3)
+ 148               		.loc 1 724 0
+ 149 006e 81FF      		sbrs r24,1
+ 150 0070 00C0      		rjmp .L14
+ 151               		.loc 1 726 0
+ 152 0072 9093 6506 		sts 1637,r25
+ 153 0076 00C0      		rjmp .L15
+ 154               	.L14:
+ 727:vec9_io.c     **** 	}
+ 728:vec9_io.c     **** 	else
+ 729:vec9_io.c     **** 	{
+ 730:vec9_io.c     **** 		PORTD.OUTCLR=(1<<0);	
+ 155               		.loc 1 730 0
+ 156 0078 9093 6606 		sts 1638,r25
+ 157               	.L15:
+ 731:vec9_io.c     **** 	}
+ 732:vec9_io.c     **** 	if(outputByteHigh&Om_FLIGHT_IND_4)
+ 158               		.loc 1 732 0
+ 159 007c 80FF      		sbrs r24,0
+ 160 007e 00C0      		rjmp .L16
+ 733:vec9_io.c     **** 	{
+ 734:vec9_io.c     **** 		PORTD.OUTSET=(1<<1);
+ 161               		.loc 1 734 0
+ 162 0080 82E0      		ldi r24,lo8(2)
+ 163 0082 8093 6506 		sts 1637,r24
+ 164 0086 00C0      		rjmp .L17
+ 165               	.L16:
+ 735:vec9_io.c     **** 	}
+ 736:vec9_io.c     **** 	else
+ 737:vec9_io.c     **** 	{
+ 738:vec9_io.c     **** 		PORTD.OUTCLR=(1<<1);	
+ 166               		.loc 1 738 0
+ 167 0088 82E0      		ldi r24,lo8(2)
+ 168 008a 8093 6606 		sts 1638,r24
+ 169               	.L17:
+ 739:vec9_io.c     **** 	}
+ 740:vec9_io.c     **** 	if(outputByteMiddle&Om_FLIGHT_IND_5)
+ 170               		.loc 1 740 0
+ 171 008e 8091 0000 		lds r24,outputByteMiddle
+ 741:vec9_io.c     **** 	{
+ 742:vec9_io.c     **** 		PORTD.OUTSET=(1<<2);
+ 172               		.loc 1 742 0
+ 173 0092 94E0      		ldi r25,lo8(4)
+ 740:vec9_io.c     **** 	if(outputByteMiddle&Om_FLIGHT_IND_5)
+ 174               		.loc 1 740 0
+ 175 0094 87FF      		sbrs r24,7
+ 176 0096 00C0      		rjmp .L18
+ 177               		.loc 1 742 0
+ 178 0098 9093 6506 		sts 1637,r25
+ 179 009c 00C0      		rjmp .L19
+ 180               	.L18:
+ 743:vec9_io.c     **** 	}
+ 744:vec9_io.c     **** 	else
+ 745:vec9_io.c     **** 	{
+ 746:vec9_io.c     **** 		PORTD.OUTCLR=(1<<2);	
+ 181               		.loc 1 746 0
+ 182 009e 9093 6606 		sts 1638,r25
+ 183               	.L19:
+ 747:vec9_io.c     **** 	}
+ 748:vec9_io.c     **** 	if(outputByteMiddle&Om_FLIGHT_IND_6)
+ 749:vec9_io.c     **** 	{
+ 750:vec9_io.c     **** 		PORTD.OUTSET=(1<<3);
+ 184               		.loc 1 750 0
+ 185 00a2 98E0      		ldi r25,lo8(8)
+ 748:vec9_io.c     **** 	if(outputByteMiddle&Om_FLIGHT_IND_6)
+ 186               		.loc 1 748 0
+ 187 00a4 86FF      		sbrs r24,6
+ 188 00a6 00C0      		rjmp .L20
+ 189               		.loc 1 750 0
+ 190 00a8 9093 6506 		sts 1637,r25
+ 191 00ac 00C0      		rjmp .L21
+ 192               	.L20:
+ 751:vec9_io.c     **** 	}
+ 752:vec9_io.c     **** 	else
+ 753:vec9_io.c     **** 	{
+ 754:vec9_io.c     **** 		PORTD.OUTCLR=(1<<3);	
+ 193               		.loc 1 754 0
+ 194 00ae 9093 6606 		sts 1638,r25
+ 195               	.L21:
+ 755:vec9_io.c     **** 	}
+ 756:vec9_io.c     **** 	if(outputByteMiddle&Om_FLIGHT_IND_7)
+ 757:vec9_io.c     **** 	{
+ 758:vec9_io.c     **** 		PORTD.OUTSET=(1<<4);
+ 196               		.loc 1 758 0
+ 197 00b2 90E1      		ldi r25,lo8(16)
+ 756:vec9_io.c     **** 	if(outputByteMiddle&Om_FLIGHT_IND_7)
+ 198               		.loc 1 756 0
+ 199 00b4 85FF      		sbrs r24,5
+ 200 00b6 00C0      		rjmp .L22
+ 201               		.loc 1 758 0
+ 202 00b8 9093 6506 		sts 1637,r25
+ 203 00bc 00C0      		rjmp .L23
+ 204               	.L22:
+ 759:vec9_io.c     **** 	}
+ 760:vec9_io.c     **** 	else
+ 761:vec9_io.c     **** 	{
+ 762:vec9_io.c     **** 		PORTD.OUTCLR=(1<<4);	
+ 205               		.loc 1 762 0
+ 206 00be 9093 6606 		sts 1638,r25
+ 207               	.L23:
+ 763:vec9_io.c     **** 	}
+ 764:vec9_io.c     **** 	if(outputByteMiddle&Om_FLIGHT_IND_8)
+ 765:vec9_io.c     **** 	{
+ 766:vec9_io.c     **** 		PORTD.OUTSET=(1<<5);
+ 208               		.loc 1 766 0
+ 209 00c2 90E2      		ldi r25,lo8(32)
+ 764:vec9_io.c     **** 	if(outputByteMiddle&Om_FLIGHT_IND_8)
+ 210               		.loc 1 764 0
+ 211 00c4 84FF      		sbrs r24,4
+ 212 00c6 00C0      		rjmp .L24
+ 213               		.loc 1 766 0
+ 214 00c8 9093 6506 		sts 1637,r25
+ 215 00cc 00C0      		rjmp .L25
+ 216               	.L24:
+ 767:vec9_io.c     **** 	}
+ 768:vec9_io.c     **** 	else
+ 769:vec9_io.c     **** 	{
+ 770:vec9_io.c     **** 		PORTD.OUTCLR=(1<<5);	
+ 217               		.loc 1 770 0
+ 218 00ce 9093 6606 		sts 1638,r25
+ 219               	.L25:
+ 771:vec9_io.c     **** 	}
+ 772:vec9_io.c     **** 	if(outputByteMiddle&Om_FLIGHT_IND_9)
+ 773:vec9_io.c     **** 	{
+ 774:vec9_io.c     **** 		PORTD.OUTSET=(1<<6);
+ 220               		.loc 1 774 0
+ 221 00d2 90E4      		ldi r25,lo8(64)
+ 772:vec9_io.c     **** 	if(outputByteMiddle&Om_FLIGHT_IND_9)
+ 222               		.loc 1 772 0
+ 223 00d4 83FF      		sbrs r24,3
+ 224 00d6 00C0      		rjmp .L26
+ 225               		.loc 1 774 0
+ 226 00d8 9093 6506 		sts 1637,r25
+ 227 00dc 00C0      		rjmp .L27
+ 228               	.L26:
+ 775:vec9_io.c     **** 	}
+ 776:vec9_io.c     **** 	else
+ 777:vec9_io.c     **** 	{
+ 778:vec9_io.c     **** 		PORTD.OUTCLR=(1<<6);	
+ 229               		.loc 1 778 0
+ 230 00de 9093 6606 		sts 1638,r25
+ 231               	.L27:
+ 779:vec9_io.c     **** 	}
+ 780:vec9_io.c     **** 	if(outputByteMiddle&Om_AIR_HORN)
+ 781:vec9_io.c     **** 	{
+ 782:vec9_io.c     **** 		PORTD.OUTSET=(1<<7);
+ 232               		.loc 1 782 0
+ 233 00e2 90E8      		ldi r25,lo8(-128)
+ 780:vec9_io.c     **** 	if(outputByteMiddle&Om_AIR_HORN)
+ 234               		.loc 1 780 0
+ 235 00e4 82FF      		sbrs r24,2
+ 236 00e6 00C0      		rjmp .L28
+ 237               		.loc 1 782 0
+ 238 00e8 9093 6506 		sts 1637,r25
+ 239 00ec 00C0      		rjmp .L29
+ 240               	.L28:
+ 783:vec9_io.c     **** 	}
+ 784:vec9_io.c     **** 	else
+ 785:vec9_io.c     **** 	{
+ 786:vec9_io.c     **** 		PORTD.OUTCLR=(1<<7);	
+ 241               		.loc 1 786 0
+ 242 00ee 9093 6606 		sts 1638,r25
+ 243               	.L29:
+ 787:vec9_io.c     **** 	}
+ 788:vec9_io.c     **** 
+ 789:vec9_io.c     **** 	// PORTE
+ 790:vec9_io.c     **** 	// -----------------------------------------
+ 791:vec9_io.c     **** 	if(outputByteMiddle&Om_PUSHBUTTON_LAMP_0)
+ 792:vec9_io.c     **** 	{
+ 793:vec9_io.c     **** 		PORTE.OUTSET=(1<<0);
+ 244               		.loc 1 793 0
+ 245 00f2 91E0      		ldi r25,lo8(1)
+ 791:vec9_io.c     **** 	if(outputByteMiddle&Om_PUSHBUTTON_LAMP_0)
+ 246               		.loc 1 791 0
+ 247 00f4 81FF      		sbrs r24,1
+ 248 00f6 00C0      		rjmp .L30
+ 249               		.loc 1 793 0
+ 250 00f8 9093 8506 		sts 1669,r25
+ 251 00fc 00C0      		rjmp .L31
+ 252               	.L30:
+ 794:vec9_io.c     **** 	}
+ 795:vec9_io.c     **** 	else
+ 796:vec9_io.c     **** 	{
+ 797:vec9_io.c     **** 		PORTE.OUTCLR=(1<<0);	
+ 253               		.loc 1 797 0
+ 254 00fe 9093 8606 		sts 1670,r25
+ 255               	.L31:
+ 798:vec9_io.c     **** 	}
+ 799:vec9_io.c     **** 	if(outputByteMiddle&Om_PUSHBUTTON_LAMP_1)
+ 256               		.loc 1 799 0
+ 257 0102 80FF      		sbrs r24,0
+ 258 0104 00C0      		rjmp .L32
+ 800:vec9_io.c     **** 	{
+ 801:vec9_io.c     **** 		PORTE.OUTSET=(1<<1);
+ 259               		.loc 1 801 0
+ 260 0106 82E0      		ldi r24,lo8(2)
+ 261 0108 8093 8506 		sts 1669,r24
+ 262 010c 00C0      		rjmp .L33
+ 263               	.L32:
+ 802:vec9_io.c     **** 	}
+ 803:vec9_io.c     **** 	else
+ 804:vec9_io.c     **** 	{
+ 805:vec9_io.c     **** 		PORTE.OUTCLR=(1<<1);	
+ 264               		.loc 1 805 0
+ 265 010e 82E0      		ldi r24,lo8(2)
+ 266 0110 8093 8606 		sts 1670,r24
+ 267               	.L33:
+ 268               	.LVL7:
+ 269               	.LBB8:
+ 270               	.LBB9:
+ 637:vec9_io.c     **** 	if(outputByteLow&Om_RED_LED_3)
+ 271               		.loc 1 637 0
+ 272 0114 8091 0000 		lds r24,outputByteLow
+ 273 0118 80FD      		sbrc r24,0
+ 274 011a 00C0      		rjmp .L46
+ 634:vec9_io.c     **** 	serOutputMask=0xFF;				// Start with mask set to off
+ 275               		.loc 1 634 0
+ 276 011c 2FEF      		ldi r18,lo8(-1)
+ 277 011e 00C0      		rjmp .L34
+ 278               	.L46:
+ 639:vec9_io.c     **** 		serOutputMask&=~(1<<0);
+ 279               		.loc 1 639 0
+ 280 0120 2EEF      		ldi r18,lo8(-2)
+ 281               	.L34:
+ 282               	.LVL8:
+ 641:vec9_io.c     **** 	if(outputByteLow&Om_RED_LED_2)
+ 283               		.loc 1 641 0
+ 284 0122 81FD      		sbrc r24,1
+ 643:vec9_io.c     **** 		serOutputMask&=~(1<<1);
+ 285               		.loc 1 643 0
+ 286 0124 2D7F      		andi r18,lo8(-3)
+ 287               	.LVL9:
+ 288               	.L35:
+ 645:vec9_io.c     **** 	if(outputByteLow&Om_RED_LED_1)
+ 289               		.loc 1 645 0
+ 290 0126 82FD      		sbrc r24,2
+ 647:vec9_io.c     **** 		serOutputMask&=~(1<<2);
+ 291               		.loc 1 647 0
+ 292 0128 2B7F      		andi r18,lo8(-5)
+ 293               	.LVL10:
+ 294               	.L36:
+ 649:vec9_io.c     **** 	if(outputByteLow&Om_RED_LED_0)
+ 295               		.loc 1 649 0
+ 296 012a 83FD      		sbrc r24,3
+ 651:vec9_io.c     **** 		serOutputMask&=~(1<<3);
+ 297               		.loc 1 651 0
+ 298 012c 277F      		andi r18,lo8(-9)
+ 299               	.LVL11:
+ 300               	.L37:
+ 654:vec9_io.c     **** 	if(outputByteLow&Om_GREEN_LED_3)
+ 301               		.loc 1 654 0
+ 302 012e 84FD      		sbrc r24,4
+ 656:vec9_io.c     **** 		serOutputMask&=~(1<<4);
+ 303               		.loc 1 656 0
+ 304 0130 2F7E      		andi r18,lo8(-17)
+ 305               	.LVL12:
+ 306               	.L38:
+ 658:vec9_io.c     **** 	if(outputByteLow&Om_GREEN_LED_2)
+ 307               		.loc 1 658 0
+ 308 0132 85FD      		sbrc r24,5
+ 660:vec9_io.c     **** 		serOutputMask&=~(1<<5);
+ 309               		.loc 1 660 0
+ 310 0134 2F7D      		andi r18,lo8(-33)
+ 311               	.LVL13:
+ 312               	.L39:
+ 662:vec9_io.c     **** 	if(outputByteLow&Om_GREEN_LED_1)
+ 313               		.loc 1 662 0
+ 314 0136 86FD      		sbrc r24,6
+ 664:vec9_io.c     **** 		serOutputMask&=~(1<<6);
+ 315               		.loc 1 664 0
+ 316 0138 2F7B      		andi r18,lo8(-65)
+ 317               	.LVL14:
+ 318               	.L40:
+ 666:vec9_io.c     **** 	if(outputByteLow&Om_GREEN_LED_0)
+ 319               		.loc 1 666 0
+ 320 013a 87FD      		sbrc r24,7
+ 668:vec9_io.c     **** 		serOutputMask&=~(1<<7);
+ 321               		.loc 1 668 0
+ 322 013c 2F77      		andi r18,lo8(127)
+ 323               	.LVL15:
+ 324               	.L41:
+ 639:vec9_io.c     **** 		serOutputMask&=~(1<<0);
+ 325               		.loc 1 639 0
+ 326 013e 80E0      		ldi r24,0
+ 327 0140 90E0      		ldi r25,0
+ 673:vec9_io.c     **** 		if(serOutputMask&(1<<i))			// Set data correctly		
+ 328               		.loc 1 673 0
+ 329 0142 30E0      		ldi r19,0
+ 679:vec9_io.c     **** 			PORTA.OUTCLR=SER_DATA_MASK;				
+ 330               		.loc 1 679 0
+ 331 0144 70E8      		ldi r23,lo8(-128)
+ 681:vec9_io.c     **** 		PORTA.OUTSET=SER_CLK_MASK;		// Bring clock high (latch in data)
+ 332               		.loc 1 681 0
+ 333 0146 60E4      		ldi r22,lo8(64)
+ 334               	.LVL16:
+ 335               	.L45:
+ 673:vec9_io.c     **** 		if(serOutputMask&(1<<i))			// Set data correctly		
+ 336               		.loc 1 673 0
+ 337 0148 A901      		movw r20,r18
+ 338 014a 082E      		mov r0,r24
+ 339 014c 00C0      		rjmp 2f
+ 340               		1:
+ 341 014e 5595      		asr r21
+ 342 0150 4795      		ror r20
+ 343               		2:
+ 344 0152 0A94      		dec r0
+ 345 0154 02F4      		brpl 1b
+ 346 0156 40FF      		sbrs r20,0
+ 347 0158 00C0      		rjmp .L42
+ 675:vec9_io.c     **** 			PORTA.OUTSET=SER_DATA_MASK;		
+ 348               		.loc 1 675 0
+ 349 015a 7093 0506 		sts 1541,r23
+ 350 015e 00C0      		rjmp .L43
+ 351               	.L42:
+ 679:vec9_io.c     **** 			PORTA.OUTCLR=SER_DATA_MASK;				
+ 352               		.loc 1 679 0
+ 353 0160 7093 0606 		sts 1542,r23
+ 354               	.L43:
+ 681:vec9_io.c     **** 		PORTA.OUTSET=SER_CLK_MASK;		// Bring clock high (latch in data)
+ 355               		.loc 1 681 0
+ 356 0164 40E4      		ldi r20,lo8(64)
+ 357 0166 6093 0506 		sts 1541,r22
+ 682:vec9_io.c     **** 		PORTA.OUTCLR=SER_CLK_MASK;		// Bring clock low
+ 358               		.loc 1 682 0
+ 359 016a 6093 0606 		sts 1542,r22
+ 360               	.LVL17:
+ 361 016e 0196      		adiw r24,1
+ 362               	.LVL18:
+ 671:vec9_io.c     **** 	for(i=0;i<8;i++)	// Clock out one byte (clock should always start low)
+ 363               		.loc 1 671 0
+ 364 0170 8830      		cpi r24,8
+ 365 0172 9105      		cpc r25,__zero_reg__
+ 366 0174 01F4      		brne .L45
+ 687:vec9_io.c     **** 	PORTA.OUTSET=SER_DATA_MASK;		// Don't care (off)
+ 367               		.loc 1 687 0
+ 368 0176 80E8      		ldi r24,lo8(-128)
+ 369               	.LVL19:
+ 370 0178 8093 0506 		sts 1541,r24
+ 688:vec9_io.c     **** 	PORTA.OUTSET=SER_CLK_MASK;		// Bring clock high (latch in data)
+ 371               		.loc 1 688 0
+ 372 017c 4093 0506 		sts 1541,r20
+ 689:vec9_io.c     **** 	PORTA.OUTCLR=SER_CLK_MASK;		// Bring clock low
+ 373               		.loc 1 689 0
+ 374 0180 4093 0606 		sts 1542,r20
+ 375 0184 0895      		ret
+ 376               	.LBE9:
+ 377               	.LBE8:
+ 378               		.cfi_endproc
+ 379               	.LFE19:
+ 382               	DoStartupTest:
+ 383               	.LFB24:
+ 806:vec9_io.c     **** 	}
+ 807:vec9_io.c     **** 
+ 808:vec9_io.c     **** 	SetSerialLeds();		// Clock data out to 595	
+ 809:vec9_io.c     **** }
+ 810:vec9_io.c     **** 
+ 811:vec9_io.c     **** //-----------------------------------------------------------------------
+ 812:vec9_io.c     **** //-----------------------------------------------------------------------
+ 813:vec9_io.c     **** // Serial
+ 814:vec9_io.c     **** //-----------------------------------------------------------------------
+ 815:vec9_io.c     **** //-----------------------------------------------------------------------
+ 816:vec9_io.c     **** 
+ 817:vec9_io.c     **** #define		INCOMING_MESSAGE_TIMEOUT			(SECOND/8)
+ 818:vec9_io.c     **** 
+ 819:vec9_io.c     **** static unsigned char
+ 820:vec9_io.c     **** 	analogRoll,
+ 821:vec9_io.c     **** 	analogPitch;
+ 822:vec9_io.c     **** 
+ 823:vec9_io.c     **** ISR(PORTD_INT0_vect)	
+ 824:vec9_io.c     **** {
+ 825:vec9_io.c     **** }
+ 826:vec9_io.c     **** 
+ 827:vec9_io.c     **** 
+ 828:vec9_io.c     **** static void UpdateIncomingSerial(void)
+ 829:vec9_io.c     **** // Inhales incoming serial from the PC and puts it out to the program when the entire message comes
+ 830:vec9_io.c     **** {
+ 831:vec9_io.c     **** 	unsigned char
+ 832:vec9_io.c     **** 		byte;
+ 833:vec9_io.c     **** 
+ 834:vec9_io.c     **** 	static unsigned char
+ 835:vec9_io.c     **** 		rxMessageState;
+ 836:vec9_io.c     **** 	bool
+ 837:vec9_io.c     **** 		gotMessage;
+ 838:vec9_io.c     **** 	
+ 839:vec9_io.c     **** 	gotMessage=false;	// No complete message yet
+ 840:vec9_io.c     **** 
+ 841:vec9_io.c     **** 	if(CheckTimer(TIMER_INCOMING_MESSAGE_TIMEOUT))		// If we don't get a byte for some period of time,
+ 842:vec9_io.c     **** 	{
+ 843:vec9_io.c     **** 		rxMessageState=0;
+ 844:vec9_io.c     **** 	}
+ 845:vec9_io.c     **** 	
+ 846:vec9_io.c     **** 	while((RxFifoNotEmpty())&&(gotMessage==false))	// Loop here handling bytes we've gotten from the c
+ 847:vec9_io.c     **** 	{
+ 848:vec9_io.c     **** 		SetTimer(TIMER_INCOMING_MESSAGE_TIMEOUT,INCOMING_MESSAGE_TIMEOUT);	// Got new bytes in the fifo, 
+ 849:vec9_io.c     **** 		byte=GetByteFromRxFifo();											// Inhale it
+ 850:vec9_io.c     **** 		switch(rxMessageState)
+ 851:vec9_io.c     **** 		{
+ 852:vec9_io.c     **** 			case 0:
+ 853:vec9_io.c     **** 				if(byte==0x42)			// Correct poll byte
+ 854:vec9_io.c     **** 				{
+ 855:vec9_io.c     **** 					rxMessageState=1;
+ 856:vec9_io.c     **** 				}
+ 857:vec9_io.c     **** 				break;
+ 858:vec9_io.c     **** 			case 1:
+ 859:vec9_io.c     **** 				outputByteHigh=byte;
+ 860:vec9_io.c     **** 				rxMessageState=2;
+ 861:vec9_io.c     **** 				break;
+ 862:vec9_io.c     **** 			case 2:
+ 863:vec9_io.c     **** 				outputByteMiddle=byte;
+ 864:vec9_io.c     **** 				rxMessageState=3;
+ 865:vec9_io.c     **** 				break;
+ 866:vec9_io.c     **** 			case 3:
+ 867:vec9_io.c     **** 				outputByteLow=byte;
+ 868:vec9_io.c     **** 				rxMessageState=0;
+ 869:vec9_io.c     **** 				gotMessage=true;
+ 870:vec9_io.c     **** 				break;
+ 871:vec9_io.c     **** 		}
+ 872:vec9_io.c     **** 	}
+ 873:vec9_io.c     **** 
+ 874:vec9_io.c     **** 	if(gotMessage)
+ 875:vec9_io.c     **** 	{
+ 876:vec9_io.c     **** 		SetOutputs();
+ 877:vec9_io.c     **** 
+ 878:vec9_io.c     **** 		// Now send out our reply
+ 879:vec9_io.c     **** 
+ 880:vec9_io.c     **** 		if(txBytesToSend==0)				// Are we done sending the last message to the host?
+ 881:vec9_io.c     **** 		{
+ 882:vec9_io.c     **** 			txBuffer[0]=0x41;
+ 883:vec9_io.c     **** 			txBuffer[1]=(unsigned char)((keyState>>8)&0xFF);
+ 884:vec9_io.c     **** 			txBuffer[2]=(unsigned char)(keyState&0xFF);
+ 885:vec9_io.c     **** 			txBuffer[3]=0;
+ 886:vec9_io.c     **** 			txBuffer[4]=0;
+ 887:vec9_io.c     **** 			txBuffer[5]=analogRoll;
+ 888:vec9_io.c     **** 			txBuffer[6]=analogPitch;
+ 889:vec9_io.c     **** 				
+ 890:vec9_io.c     **** 			txBytesToSend=7;
+ 891:vec9_io.c     **** 			txBufferIndex=0;
+ 892:vec9_io.c     **** 		}
+ 893:vec9_io.c     **** 	}
+ 894:vec9_io.c     **** }
+ 895:vec9_io.c     **** 
+ 896:vec9_io.c     **** static void UpdateOutgoingSerial(void)
+ 897:vec9_io.c     **** // Keep bytes going out to the host if necessary
+ 898:vec9_io.c     **** {
+ 899:vec9_io.c     **** 	if(txBytesToSend)	// Anything to go out?
+ 900:vec9_io.c     **** 	{
+ 901:vec9_io.c     **** 		if(UartTxBufferReady())		// Room in the Uart TX fifo?
+ 902:vec9_io.c     **** 		{
+ 903:vec9_io.c     **** 			UartSendByte(txBuffer[txBufferIndex++]);
+ 904:vec9_io.c     **** 			txBytesToSend--;
+ 905:vec9_io.c     **** 		}
+ 906:vec9_io.c     **** 	}
+ 907:vec9_io.c     **** }
+ 908:vec9_io.c     **** 
+ 909:vec9_io.c     **** //-----------------------------------------------------------------------
+ 910:vec9_io.c     **** //-----------------------------------------------------------------------
+ 911:vec9_io.c     **** // High Level
+ 912:vec9_io.c     **** //-----------------------------------------------------------------------
+ 913:vec9_io.c     **** //-----------------------------------------------------------------------
+ 914:vec9_io.c     **** 
+ 915:vec9_io.c     **** static void DoUpdateIo(void)
+ 916:vec9_io.c     **** // Keep reading the switches, and update indicators when told
+ 917:vec9_io.c     **** {
+ 918:vec9_io.c     **** 
+ 919:vec9_io.c     **** 	// If new ADC reading, put it in the mask
+ 920:vec9_io.c     **** 	if(newAdcResult[ADC_YOKE_PITCH]==true)
+ 921:vec9_io.c     **** 	{
+ 922:vec9_io.c     **** 		analogPitch=(unsigned char)(adcResults[ADC_YOKE_PITCH]/8);		// Get back to 8 bits
+ 923:vec9_io.c     **** 	}
+ 924:vec9_io.c     **** 	if(newAdcResult[ADC_YOKE_ROLL]==true)
+ 925:vec9_io.c     **** 	{
+ 926:vec9_io.c     **** 		analogRoll=(unsigned char)(adcResults[ADC_YOKE_ROLL]/8);		// Get back to 8 bits
+ 927:vec9_io.c     **** 	}
+ 928:vec9_io.c     **** 
+ 929:vec9_io.c     **** 	UpdateIncomingSerial();		// If we get a full message from the PC, do what it says and send a reply
+ 930:vec9_io.c     **** 	if(txBytesToSend)
+ 931:vec9_io.c     **** 	{
+ 932:vec9_io.c     **** 		UpdateOutgoingSerial();
+ 933:vec9_io.c     **** 	}
+ 934:vec9_io.c     **** }
+ 935:vec9_io.c     **** 
+ 936:vec9_io.c     **** #define		HORN_INTRO_TIME		(SECOND/4)
+ 937:vec9_io.c     **** #define		CHASE_TIME			(SECOND/8)
+ 938:vec9_io.c     **** #define		LAMP_TIME			((SECOND*4)/3)
+ 939:vec9_io.c     **** 
+ 940:vec9_io.c     **** 
+ 941:vec9_io.c     **** static void DoStartupTest(void)
+ 942:vec9_io.c     **** // At power on, go here and make pretty / diagnostic light chases until the game boots.
+ 943:vec9_io.c     **** // Leave this state when we start receiving bytes over serial.
+ 944:vec9_io.c     **** {
+ 384               		.loc 1 944 0
+ 385               		.cfi_startproc
+ 386 0186 CF93      		push r28
+ 387               	.LCFI2:
+ 388               		.cfi_def_cfa_offset 3
+ 389               		.cfi_offset 28, -2
+ 390               	/* prologue: function */
+ 391               	/* frame size = 0 */
+ 392               	/* stack size = 1 */
+ 393               	.L__stack_usage = 1
+ 945:vec9_io.c     **** 	static unsigned char
+ 946:vec9_io.c     **** 		lastOutputByteHigh,
+ 947:vec9_io.c     **** 		lastOutputByteMiddle,
+ 948:vec9_io.c     **** 		lastOutputByteLow;
+ 949:vec9_io.c     **** 
+ 950:vec9_io.c     **** 	static unsigned char
+ 951:vec9_io.c     **** 		shiftIndex,
+ 952:vec9_io.c     **** 		lampCounter;
+ 953:vec9_io.c     **** 	
+ 954:vec9_io.c     **** 	if(subState==SS_0)					// Horn intro
+ 394               		.loc 1 954 0
+ 395 0188 C091 0000 		lds r28,subState
+ 396 018c C111      		cpse r28,__zero_reg__
+ 397 018e 00C0      		rjmp .L66
+ 955:vec9_io.c     **** 	{
+ 956:vec9_io.c     **** 		SetTimer(TIMER_1,(HORN_INTRO_TIME));
+ 398               		.loc 1 956 0
+ 399 0190 6EEE      		ldi r22,lo8(-18)
+ 400 0192 72E0      		ldi r23,lo8(2)
+ 401 0194 80E0      		ldi r24,0
+ 402 0196 0E94 0000 		call SetTimer
+ 403               	.LVL20:
+ 957:vec9_io.c     **** 		outputByteMiddle=Om_AIR_HORN;
+ 958:vec9_io.c     **** 		outputByteHigh=(Om_FLIGHT_IND_0|Om_FLIGHT_IND_1);
+ 404               		.loc 1 958 0
+ 405 019a 88E1      		ldi r24,lo8(24)
+ 406 019c 8093 0000 		sts outputByteHigh,r24
+ 959:vec9_io.c     **** 		outputByteMiddle|=Om_PUSHBUTTON_LAMP_1;
+ 407               		.loc 1 959 0
+ 408 01a0 85E0      		ldi r24,lo8(5)
+ 409 01a2 8093 0000 		sts outputByteMiddle,r24
+ 960:vec9_io.c     **** 		SetOutputs();
+ 410               		.loc 1 960 0
+ 411 01a6 0E94 0000 		call SetOutputs
+ 412               	.LVL21:
+ 961:vec9_io.c     **** 		subState=SS_1;
+ 413               		.loc 1 961 0
+ 414 01aa 81E0      		ldi r24,lo8(1)
+ 415 01ac 00C0      		rjmp .L212
+ 416               	.L66:
+ 962:vec9_io.c     **** 	}
+ 963:vec9_io.c     **** 	else if(subState==SS_1)
+ 417               		.loc 1 963 0
+ 418 01ae C130      		cpi r28,lo8(1)
+ 419 01b0 01F4      		brne .L68
+ 964:vec9_io.c     **** 	{
+ 965:vec9_io.c     **** 		if(CheckTimer(TIMER_1))
+ 420               		.loc 1 965 0
+ 421 01b2 80E0      		ldi r24,0
+ 422 01b4 0E94 0000 		call CheckTimer
+ 423               	.LVL22:
+ 424 01b8 8823      		tst r24
+ 425 01ba 01F4      		brne .+2
+ 426 01bc 00C0      		rjmp .L67
+ 966:vec9_io.c     **** 		{
+ 967:vec9_io.c     **** 			SetTimer(TIMER_1,(HORN_INTRO_TIME));
+ 427               		.loc 1 967 0
+ 428 01be 6EEE      		ldi r22,lo8(-18)
+ 429 01c0 72E0      		ldi r23,lo8(2)
+ 430 01c2 80E0      		ldi r24,0
+ 431 01c4 0E94 0000 		call SetTimer
+ 432               	.LVL23:
+ 968:vec9_io.c     **** 			outputByteMiddle=0;
+ 969:vec9_io.c     **** 			outputByteHigh=(Om_FLIGHT_IND_0|Om_FLIGHT_IND_1|Om_FLIGHT_IND_2|Om_FLIGHT_IND_3);
+ 433               		.loc 1 969 0
+ 434 01c8 8EE1      		ldi r24,lo8(30)
+ 435 01ca 8093 0000 		sts outputByteHigh,r24
+ 970:vec9_io.c     **** 			outputByteMiddle|=Om_PUSHBUTTON_LAMP_0;
+ 436               		.loc 1 970 0
+ 437 01ce C2E0      		ldi r28,lo8(2)
+ 438 01d0 C093 0000 		sts outputByteMiddle,r28
+ 971:vec9_io.c     **** 			SetOutputs();
+ 439               		.loc 1 971 0
+ 440 01d4 0E94 0000 		call SetOutputs
+ 441               	.LVL24:
+ 972:vec9_io.c     **** 			subState=SS_2;	
+ 442               		.loc 1 972 0
+ 443 01d8 C093 0000 		sts subState,r28
+ 444 01dc 00C0      		rjmp .L67
+ 445               	.L68:
+ 973:vec9_io.c     **** 		}
+ 974:vec9_io.c     **** 	}
+ 975:vec9_io.c     **** 	else if(subState==SS_2)
+ 446               		.loc 1 975 0
+ 447 01de C230      		cpi r28,lo8(2)
+ 448 01e0 01F4      		brne .L70
+ 976:vec9_io.c     **** 	{
+ 977:vec9_io.c     **** 		if(CheckTimer(TIMER_1))
+ 449               		.loc 1 977 0
+ 450 01e2 80E0      		ldi r24,0
+ 451 01e4 0E94 0000 		call CheckTimer
+ 452               	.LVL25:
+ 453 01e8 8823      		tst r24
+ 454 01ea 01F4      		brne .+2
+ 455 01ec 00C0      		rjmp .L67
+ 978:vec9_io.c     **** 		{
+ 979:vec9_io.c     **** 			SetTimer(TIMER_1,(HORN_INTRO_TIME));
+ 456               		.loc 1 979 0
+ 457 01ee 6EEE      		ldi r22,lo8(-18)
+ 458 01f0 72E0      		ldi r23,lo8(2)
+ 459 01f2 80E0      		ldi r24,0
+ 460 01f4 0E94 0000 		call SetTimer
+ 461               	.LVL26:
+ 980:vec9_io.c     **** 			outputByteMiddle=Om_AIR_HORN;
+ 981:vec9_io.c     **** 			outputByteHigh=(Om_FLIGHT_IND_2|Om_FLIGHT_IND_3|Om_FLIGHT_IND_4);
+ 462               		.loc 1 981 0
+ 463 01f8 87E0      		ldi r24,lo8(7)
+ 464 01fa 8093 0000 		sts outputByteHigh,r24
+ 982:vec9_io.c     **** 			outputByteMiddle|=Om_FLIGHT_IND_5;
+ 465               		.loc 1 982 0
+ 466 01fe 84E8      		ldi r24,lo8(-124)
+ 467 0200 8093 0000 		sts outputByteMiddle,r24
+ 983:vec9_io.c     **** 			outputByteLow=Om_RED_LED_3;
+ 468               		.loc 1 983 0
+ 469 0204 81E0      		ldi r24,lo8(1)
+ 470 0206 8093 0000 		sts outputByteLow,r24
+ 984:vec9_io.c     **** 			SetOutputs();
+ 471               		.loc 1 984 0
+ 472 020a 0E94 0000 		call SetOutputs
+ 473               	.LVL27:
+ 985:vec9_io.c     **** 			subState=SS_3;	
+ 474               		.loc 1 985 0
+ 475 020e 83E0      		ldi r24,lo8(3)
+ 476               	.L212:
+ 477 0210 8093 0000 		sts subState,r24
+ 478 0214 00C0      		rjmp .L67
+ 479               	.L70:
+ 986:vec9_io.c     **** 		}
+ 987:vec9_io.c     **** 	}
+ 988:vec9_io.c     **** 	else if(subState==SS_3)
+ 480               		.loc 1 988 0
+ 481 0216 C330      		cpi r28,lo8(3)
+ 482 0218 01F4      		brne .L72
+ 989:vec9_io.c     **** 	{
+ 990:vec9_io.c     **** 		if(CheckTimer(TIMER_1))
+ 483               		.loc 1 990 0
+ 484 021a 80E0      		ldi r24,0
+ 485 021c 0E94 0000 		call CheckTimer
+ 486               	.LVL28:
+ 487 0220 8823      		tst r24
+ 488 0222 01F4      		brne .+2
+ 489 0224 00C0      		rjmp .L67
+ 991:vec9_io.c     **** 		{
+ 992:vec9_io.c     **** 			SetTimer(TIMER_1,(HORN_INTRO_TIME));
+ 490               		.loc 1 992 0
+ 491 0226 6EEE      		ldi r22,lo8(-18)
+ 492 0228 72E0      		ldi r23,lo8(2)
+ 493 022a 80E0      		ldi r24,0
+ 494 022c 0E94 0000 		call SetTimer
+ 495               	.LVL29:
+ 993:vec9_io.c     **** 			outputByteMiddle=0;
+ 994:vec9_io.c     **** 			outputByteHigh=Om_FLIGHT_IND_4;
+ 496               		.loc 1 994 0
+ 497 0230 81E0      		ldi r24,lo8(1)
+ 498 0232 8093 0000 		sts outputByteHigh,r24
+ 995:vec9_io.c     **** 			outputByteMiddle|=(Om_FLIGHT_IND_5|Om_FLIGHT_IND_6|Om_FLIGHT_IND_7);
+ 499               		.loc 1 995 0
+ 500 0236 80EE      		ldi r24,lo8(-32)
+ 501 0238 8093 0000 		sts outputByteMiddle,r24
+ 996:vec9_io.c     **** 			outputByteLow=Om_RED_LED_2;
+ 502               		.loc 1 996 0
+ 503 023c 82E0      		ldi r24,lo8(2)
+ 504 023e 8093 0000 		sts outputByteLow,r24
+ 997:vec9_io.c     **** 			SetOutputs();
+ 505               		.loc 1 997 0
+ 506 0242 0E94 0000 		call SetOutputs
+ 507               	.LVL30:
+ 998:vec9_io.c     **** 			subState=SS_4;	
+ 508               		.loc 1 998 0
+ 509 0246 84E0      		ldi r24,lo8(4)
+ 510 0248 00C0      		rjmp .L212
+ 511               	.L72:
+ 999:vec9_io.c     **** 		}
+1000:vec9_io.c     **** 	}
+1001:vec9_io.c     **** 	else if(subState==SS_4)
+ 512               		.loc 1 1001 0
+ 513 024a C430      		cpi r28,lo8(4)
+ 514 024c 01F4      		brne .L73
+1002:vec9_io.c     **** 	{
+1003:vec9_io.c     **** 		if(CheckTimer(TIMER_1))
+ 515               		.loc 1 1003 0
+ 516 024e 80E0      		ldi r24,0
+ 517 0250 0E94 0000 		call CheckTimer
+ 518               	.LVL31:
+ 519 0254 8823      		tst r24
+ 520 0256 01F4      		brne .+2
+ 521 0258 00C0      		rjmp .L67
+1004:vec9_io.c     **** 		{
+1005:vec9_io.c     **** 			SetTimer(TIMER_1,(HORN_INTRO_TIME));
+ 522               		.loc 1 1005 0
+ 523 025a 6EEE      		ldi r22,lo8(-18)
+ 524 025c 72E0      		ldi r23,lo8(2)
+ 525 025e 80E0      		ldi r24,0
+ 526 0260 0E94 0000 		call SetTimer
+ 527               	.LVL32:
+1006:vec9_io.c     **** 			outputByteMiddle=Om_AIR_HORN;
+1007:vec9_io.c     **** 			outputByteHigh=0;
+ 528               		.loc 1 1007 0
+ 529 0264 1092 0000 		sts outputByteHigh,__zero_reg__
+1008:vec9_io.c     **** 			outputByteMiddle|=(Om_FLIGHT_IND_6|Om_FLIGHT_IND_7|Om_FLIGHT_IND_8|Om_FLIGHT_IND_9);
+ 530               		.loc 1 1008 0
+ 531 0268 8CE7      		ldi r24,lo8(124)
+ 532 026a 8093 0000 		sts outputByteMiddle,r24
+1009:vec9_io.c     **** 			outputByteLow=Om_RED_LED_1;
+ 533               		.loc 1 1009 0
+ 534 026e C093 0000 		sts outputByteLow,r28
+1010:vec9_io.c     **** 			SetOutputs();
+ 535               		.loc 1 1010 0
+ 536 0272 0E94 0000 		call SetOutputs
+ 537               	.LVL33:
+1011:vec9_io.c     **** 			subState=SS_5;	
+ 538               		.loc 1 1011 0
+ 539 0276 85E0      		ldi r24,lo8(5)
+ 540 0278 00C0      		rjmp .L212
+ 541               	.L73:
+1012:vec9_io.c     **** 		}
+1013:vec9_io.c     **** 	}
+1014:vec9_io.c     **** 	else if(subState==SS_5)
+ 542               		.loc 1 1014 0
+ 543 027a C530      		cpi r28,lo8(5)
+ 544 027c 01F4      		brne .L74
+1015:vec9_io.c     **** 	{
+1016:vec9_io.c     **** 		if(CheckTimer(TIMER_1))
+ 545               		.loc 1 1016 0
+ 546 027e 80E0      		ldi r24,0
+ 547 0280 0E94 0000 		call CheckTimer
+ 548               	.LVL34:
+ 549 0284 8823      		tst r24
+ 550 0286 01F4      		brne .+2
+ 551 0288 00C0      		rjmp .L67
+1017:vec9_io.c     **** 		{
+1018:vec9_io.c     **** 			SetTimer(TIMER_1,(HORN_INTRO_TIME));
+ 552               		.loc 1 1018 0
+ 553 028a 6EEE      		ldi r22,lo8(-18)
+ 554 028c 72E0      		ldi r23,lo8(2)
+ 555 028e 80E0      		ldi r24,0
+ 556 0290 0E94 0000 		call SetTimer
+ 557               	.LVL35:
+1019:vec9_io.c     **** 			outputByteMiddle=0;
+1020:vec9_io.c     **** 			outputByteMiddle|=(Om_FLIGHT_IND_8|Om_FLIGHT_IND_9);
+ 558               		.loc 1 1020 0
+ 559 0294 88E1      		ldi r24,lo8(24)
+ 560 0296 8093 0000 		sts outputByteMiddle,r24
+1021:vec9_io.c     **** 			outputByteLow=Om_RED_LED_0;
+ 561               		.loc 1 1021 0
+ 562 029a 88E0      		ldi r24,lo8(8)
+ 563 029c 8093 0000 		sts outputByteLow,r24
+1022:vec9_io.c     **** 			SetOutputs();
+ 564               		.loc 1 1022 0
+ 565 02a0 0E94 0000 		call SetOutputs
+ 566               	.LVL36:
+1023:vec9_io.c     **** 			subState=SS_6;	
+ 567               		.loc 1 1023 0
+ 568 02a4 86E0      		ldi r24,lo8(6)
+ 569 02a6 00C0      		rjmp .L212
+ 570               	.L74:
+1024:vec9_io.c     **** 		}
+1025:vec9_io.c     **** 	}
+1026:vec9_io.c     **** 	else if(subState==SS_6)
+ 571               		.loc 1 1026 0
+ 572 02a8 C630      		cpi r28,lo8(6)
+ 573 02aa 01F4      		brne .L75
+1027:vec9_io.c     **** 	{
+1028:vec9_io.c     **** 		if(CheckTimer(TIMER_1))
+ 574               		.loc 1 1028 0
+ 575 02ac 80E0      		ldi r24,0
+ 576 02ae 0E94 0000 		call CheckTimer
+ 577               	.LVL37:
+ 578 02b2 8823      		tst r24
+ 579 02b4 01F4      		brne .+2
+ 580 02b6 00C0      		rjmp .L67
+1029:vec9_io.c     **** 		{
+1030:vec9_io.c     **** 			SetTimer(TIMER_1,(HORN_INTRO_TIME));
+ 581               		.loc 1 1030 0
+ 582 02b8 6EEE      		ldi r22,lo8(-18)
+ 583 02ba 72E0      		ldi r23,lo8(2)
+ 584 02bc 80E0      		ldi r24,0
+ 585 02be 0E94 0000 		call SetTimer
+ 586               	.LVL38:
+1031:vec9_io.c     **** 			outputByteMiddle=Om_AIR_HORN;
+ 587               		.loc 1 1031 0
+ 588 02c2 84E0      		ldi r24,lo8(4)
+ 589 02c4 8093 0000 		sts outputByteMiddle,r24
+1032:vec9_io.c     **** 			outputByteLow=(Om_GREEN_LED_0|Om_GREEN_LED_1|Om_GREEN_LED_2|Om_GREEN_LED_3);
+ 590               		.loc 1 1032 0
+ 591 02c8 80EF      		ldi r24,lo8(-16)
+ 592 02ca 8093 0000 		sts outputByteLow,r24
+1033:vec9_io.c     **** 
+1034:vec9_io.c     **** 			SetOutputs();
+ 593               		.loc 1 1034 0
+ 594 02ce 0E94 0000 		call SetOutputs
+ 595               	.LVL39:
+1035:vec9_io.c     **** 			subState=SS_7;	
+ 596               		.loc 1 1035 0
+ 597 02d2 87E0      		ldi r24,lo8(7)
+ 598 02d4 00C0      		rjmp .L212
+ 599               	.L75:
+1036:vec9_io.c     **** 		}
+1037:vec9_io.c     **** 	}
+1038:vec9_io.c     **** 	else if(subState==SS_7)
+ 600               		.loc 1 1038 0
+ 601 02d6 C730      		cpi r28,lo8(7)
+ 602 02d8 01F4      		brne .L76
+1039:vec9_io.c     **** 	{
+1040:vec9_io.c     **** 		if(CheckTimer(TIMER_1))
+ 603               		.loc 1 1040 0
+ 604 02da 80E0      		ldi r24,0
+ 605 02dc 0E94 0000 		call CheckTimer
+ 606               	.LVL40:
+ 607 02e0 8823      		tst r24
+ 608 02e2 01F4      		brne .+2
+ 609 02e4 00C0      		rjmp .L67
+1041:vec9_io.c     **** 		{
+1042:vec9_io.c     **** 			SetTimer(TIMER_1,(CHASE_TIME));
+ 610               		.loc 1 1042 0
+ 611 02e6 67E7      		ldi r22,lo8(119)
+ 612 02e8 71E0      		ldi r23,lo8(1)
+ 613 02ea 80E0      		ldi r24,0
+ 614 02ec 0E94 0000 		call SetTimer
+ 615               	.LVL41:
+1043:vec9_io.c     **** 			SetTimer(TIMER_2,(LAMP_TIME));
+ 616               		.loc 1 1043 0
+ 617 02f0 60EA      		ldi r22,lo8(-96)
+ 618 02f2 7FE0      		ldi r23,lo8(15)
+ 619 02f4 81E0      		ldi r24,lo8(1)
+ 620 02f6 0E94 0000 		call SetTimer
+ 621               	.LVL42:
+1044:vec9_io.c     **** 
+1045:vec9_io.c     **** 			outputByteHigh=0;
+ 622               		.loc 1 1045 0
+ 623 02fa 1092 0000 		sts outputByteHigh,__zero_reg__
+1046:vec9_io.c     **** 			outputByteMiddle=0;
+ 624               		.loc 1 1046 0
+ 625 02fe 1092 0000 		sts outputByteMiddle,__zero_reg__
+1047:vec9_io.c     **** 			outputByteLow=0;
+ 626               		.loc 1 1047 0
+ 627 0302 1092 0000 		sts outputByteLow,__zero_reg__
+1048:vec9_io.c     **** 			SetOutputs();
+ 628               		.loc 1 1048 0
+ 629 0306 0E94 0000 		call SetOutputs
+ 630               	.LVL43:
+1049:vec9_io.c     **** 
+1050:vec9_io.c     **** 			shiftIndex=0;
+ 631               		.loc 1 1050 0
+ 632 030a 1092 0000 		sts shiftIndex.3904,__zero_reg__
+1051:vec9_io.c     **** 			lampCounter=0;
+ 633               		.loc 1 1051 0
+ 634 030e 1092 0000 		sts lampCounter.3905,__zero_reg__
+1052:vec9_io.c     **** 
+1053:vec9_io.c     **** 			subState=SS_8;	
+ 635               		.loc 1 1053 0
+ 636 0312 88E0      		ldi r24,lo8(8)
+ 637 0314 00C0      		rjmp .L212
+ 638               	.L76:
+1054:vec9_io.c     **** 		}
+1055:vec9_io.c     **** 	}	
+1056:vec9_io.c     **** 	// LIGHT CHASE -----------------------------
+1057:vec9_io.c     **** 	else if(subState==SS_8)
+ 639               		.loc 1 1057 0
+ 640 0316 C830      		cpi r28,lo8(8)
+ 641 0318 01F0      		breq .+2
+ 642 031a 00C0      		rjmp .L67
+1058:vec9_io.c     **** 	{
+1059:vec9_io.c     **** 		lastOutputByteHigh=outputByteHigh;
+ 643               		.loc 1 1059 0
+ 644 031c 8091 0000 		lds r24,outputByteHigh
+ 645 0320 8093 0000 		sts lastOutputByteHigh.3901,r24
+1060:vec9_io.c     **** 		lastOutputByteMiddle=outputByteMiddle;
+ 646               		.loc 1 1060 0
+ 647 0324 8091 0000 		lds r24,outputByteMiddle
+ 648 0328 8093 0000 		sts lastOutputByteMiddle.3902,r24
+1061:vec9_io.c     **** 		lastOutputByteLow=outputByteLow;
+ 649               		.loc 1 1061 0
+ 650 032c 8091 0000 		lds r24,outputByteLow
+ 651 0330 8093 0000 		sts lastOutputByteLow.3903,r24
+1062:vec9_io.c     **** 	
+1063:vec9_io.c     **** 		if(CheckTimer(TIMER_1))		// Update Green LEDs
+ 652               		.loc 1 1063 0
+ 653 0334 80E0      		ldi r24,0
+ 654 0336 0E94 0000 		call CheckTimer
+ 655               	.LVL44:
+ 656 033a 8823      		tst r24
+ 657 033c 01F4      		brne .+2
+ 658 033e 00C0      		rjmp .L77
+1064:vec9_io.c     **** 		{
+1065:vec9_io.c     **** 			shiftIndex++;
+ 659               		.loc 1 1065 0
+ 660 0340 8091 0000 		lds r24,shiftIndex.3904
+ 661 0344 8F5F      		subi r24,lo8(-(1))
+ 662 0346 8093 0000 		sts shiftIndex.3904,r24
+1066:vec9_io.c     **** 
+1067:vec9_io.c     **** 			if(shiftIndex<5)	// LEDs marching up
+ 663               		.loc 1 1067 0
+ 664 034a 8530      		cpi r24,lo8(5)
+ 665 034c 00F4      		brsh .L78
+1068:vec9_io.c     **** 			{
+1069:vec9_io.c     **** 				// Clear Green LEDs
+1070:vec9_io.c     **** 				outputByteLow&=~(Om_GREEN_LED_0|Om_GREEN_LED_1|Om_GREEN_LED_2|Om_GREEN_LED_3);
+ 666               		.loc 1 1070 0
+ 667 034e 9091 0000 		lds r25,outputByteLow
+ 668 0352 9F70      		andi r25,lo8(15)
+ 669 0354 9093 0000 		sts outputByteLow,r25
+1071:vec9_io.c     **** 
+1072:vec9_io.c     **** 				if(shiftIndex>=1)
+ 670               		.loc 1 1072 0
+ 671 0358 8823      		tst r24
+ 672 035a 01F0      		breq .L83
+1073:vec9_io.c     **** 				{
+1074:vec9_io.c     **** 					outputByteLow|=Om_GREEN_LED_0;
+ 673               		.loc 1 1074 0
+ 674 035c 292F      		mov r18,r25
+ 675 035e 2068      		ori r18,lo8(-128)
+ 676 0360 2093 0000 		sts outputByteLow,r18
+1075:vec9_io.c     **** 				}
+1076:vec9_io.c     **** 				if(shiftIndex>=2)
+ 677               		.loc 1 1076 0
+ 678 0364 8130      		cpi r24,lo8(1)
+ 679 0366 01F0      		breq .L83
+1077:vec9_io.c     **** 				{
+1078:vec9_io.c     **** 					outputByteLow|=Om_GREEN_LED_1;
+ 680               		.loc 1 1078 0
+ 681 0368 292F      		mov r18,r25
+ 682 036a 206C      		ori r18,lo8(-64)
+ 683 036c 2093 0000 		sts outputByteLow,r18
+1079:vec9_io.c     **** 				}
+1080:vec9_io.c     **** 				if(shiftIndex>=3)
+ 684               		.loc 1 1080 0
+ 685 0370 8230      		cpi r24,lo8(2)
+ 686 0372 01F0      		breq .L83
+1081:vec9_io.c     **** 				{
+1082:vec9_io.c     **** 					outputByteLow|=Om_GREEN_LED_2;
+ 687               		.loc 1 1082 0
+ 688 0374 292F      		mov r18,r25
+ 689 0376 206E      		ori r18,lo8(-32)
+ 690 0378 2093 0000 		sts outputByteLow,r18
+1083:vec9_io.c     **** 				}
+1084:vec9_io.c     **** 				if(shiftIndex>=4)
+ 691               		.loc 1 1084 0
+ 692 037c 8430      		cpi r24,lo8(4)
+ 693 037e 01F4      		brne .L83
+1085:vec9_io.c     **** 				{
+1086:vec9_io.c     **** 					outputByteLow|=Om_GREEN_LED_3;
+ 694               		.loc 1 1086 0
+ 695 0380 906F      		ori r25,lo8(-16)
+ 696 0382 00C0      		rjmp .L206
+ 697               	.L78:
+1087:vec9_io.c     **** 				}
+1088:vec9_io.c     **** 			}
+1089:vec9_io.c     **** 			else if(shiftIndex<9)	// Leds marching off
+ 698               		.loc 1 1089 0
+ 699 0384 8930      		cpi r24,lo8(9)
+ 700 0386 00F4      		brsh .L84
+1090:vec9_io.c     **** 			{
+1091:vec9_io.c     **** 				// Set Green LEDs
+1092:vec9_io.c     **** 				outputByteLow|=(Om_GREEN_LED_0|Om_GREEN_LED_1|Om_GREEN_LED_2|Om_GREEN_LED_3);
+ 701               		.loc 1 1092 0
+ 702 0388 9091 0000 		lds r25,outputByteLow
+1093:vec9_io.c     **** 
+1094:vec9_io.c     **** 				if(shiftIndex>=5)
+1095:vec9_io.c     **** 				{
+1096:vec9_io.c     **** 					outputByteLow&=~Om_GREEN_LED_0;
+ 703               		.loc 1 1096 0
+ 704 038c 292F      		mov r18,r25
+ 705 038e 2F77      		andi r18,lo8(127)
+ 706 0390 2067      		ori r18,lo8(112)
+ 707 0392 2093 0000 		sts outputByteLow,r18
+1097:vec9_io.c     **** 				}
+1098:vec9_io.c     **** 				if(shiftIndex>=6)
+ 708               		.loc 1 1098 0
+ 709 0396 8530      		cpi r24,lo8(5)
+ 710 0398 01F0      		breq .L83
+1099:vec9_io.c     **** 				{
+1100:vec9_io.c     **** 					outputByteLow&=~Om_GREEN_LED_1;
+ 711               		.loc 1 1100 0
+ 712 039a 292F      		mov r18,r25
+ 713 039c 2F73      		andi r18,lo8(63)
+ 714 039e 2063      		ori r18,lo8(48)
+ 715 03a0 2093 0000 		sts outputByteLow,r18
+1101:vec9_io.c     **** 				}
+1102:vec9_io.c     **** 				if(shiftIndex>=7)
+ 716               		.loc 1 1102 0
+ 717 03a4 8630      		cpi r24,lo8(6)
+ 718 03a6 01F0      		breq .L83
+1103:vec9_io.c     **** 				{
+1104:vec9_io.c     **** 					outputByteLow&=~Om_GREEN_LED_2;
+ 719               		.loc 1 1104 0
+ 720 03a8 292F      		mov r18,r25
+ 721 03aa 2F71      		andi r18,lo8(31)
+ 722 03ac 2061      		ori r18,lo8(16)
+ 723 03ae 2093 0000 		sts outputByteLow,r18
+1105:vec9_io.c     **** 				}
+1106:vec9_io.c     **** 				if(shiftIndex>=8)
+ 724               		.loc 1 1106 0
+ 725 03b2 8830      		cpi r24,lo8(8)
+ 726 03b4 01F4      		brne .L83
+1107:vec9_io.c     **** 				{
+1108:vec9_io.c     **** 					outputByteLow&=~Om_GREEN_LED_3;
+ 727               		.loc 1 1108 0
+ 728 03b6 9F70      		andi r25,lo8(15)
+ 729               	.L206:
+ 730 03b8 9093 0000 		sts outputByteLow,r25
+ 731 03bc 00C0      		rjmp .L83
+ 732               	.L84:
+1109:vec9_io.c     **** 				}			
+1110:vec9_io.c     **** 			}
+1111:vec9_io.c     **** 			else if(shiftIndex<13)	// No green LEDs, pause
+ 733               		.loc 1 1111 0
+ 734 03be 8D30      		cpi r24,lo8(13)
+ 735 03c0 00F4      		brsh .L87
+1112:vec9_io.c     **** 			{
+1113:vec9_io.c     **** 				outputByteLow&=~(Om_GREEN_LED_0|Om_GREEN_LED_1|Om_GREEN_LED_2|Om_GREEN_LED_3);
+ 736               		.loc 1 1113 0
+ 737 03c2 8091 0000 		lds r24,outputByteLow
+ 738 03c6 8F70      		andi r24,lo8(15)
+ 739 03c8 8093 0000 		sts outputByteLow,r24
+ 740 03cc 00C0      		rjmp .L83
+ 741               	.L87:
+1114:vec9_io.c     **** 			}
+1115:vec9_io.c     **** 			else
+1116:vec9_io.c     **** 			{
+1117:vec9_io.c     **** 				shiftIndex=0;
+ 742               		.loc 1 1117 0
+ 743 03ce 1092 0000 		sts shiftIndex.3904,__zero_reg__
+ 744               	.L83:
+1118:vec9_io.c     **** 			}
+1119:vec9_io.c     **** 
+1120:vec9_io.c     **** 			SetTimer(TIMER_1,(CHASE_TIME));
+ 745               		.loc 1 1120 0
+ 746 03d2 67E7      		ldi r22,lo8(119)
+ 747 03d4 71E0      		ldi r23,lo8(1)
+ 748 03d6 80E0      		ldi r24,0
+ 749 03d8 0E94 0000 		call SetTimer
+ 750               	.LVL45:
+ 751               	.L77:
+1121:vec9_io.c     **** 		}
+1122:vec9_io.c     **** 		
+1123:vec9_io.c     **** 		if(CheckTimer(TIMER_2))		// Chase pushbutton lamps if we aren't fussing with them
+ 752               		.loc 1 1123 0
+ 753 03dc 81E0      		ldi r24,lo8(1)
+ 754 03de 0E94 0000 		call CheckTimer
+ 755               	.LVL46:
+ 756 03e2 8823      		tst r24
+ 757 03e4 01F0      		breq .L88
+1124:vec9_io.c     **** 		{
+1125:vec9_io.c     **** 			lampCounter++;
+ 758               		.loc 1 1125 0
+ 759 03e6 8091 0000 		lds r24,lampCounter.3905
+ 760 03ea 8F5F      		subi r24,lo8(-(1))
+1126:vec9_io.c     **** 			if(lampCounter>=4)
+ 761               		.loc 1 1126 0
+ 762 03ec 8430      		cpi r24,lo8(4)
+ 763 03ee 00F4      		brsh .L89
+1125:vec9_io.c     **** 			lampCounter++;
+ 764               		.loc 1 1125 0
+ 765 03f0 8093 0000 		sts lampCounter.3905,r24
+ 766 03f4 00C0      		rjmp .L90
+ 767               	.L89:
+1127:vec9_io.c     **** 			{
+1128:vec9_io.c     **** 				lampCounter=0;
+ 768               		.loc 1 1128 0
+ 769 03f6 1092 0000 		sts lampCounter.3905,__zero_reg__
+ 770               	.L90:
+1129:vec9_io.c     **** 			}
+1130:vec9_io.c     **** 
+1131:vec9_io.c     **** 			outputByteMiddle&=~Om_PUSHBUTTON_LAMP_0;		
+1132:vec9_io.c     **** 			outputByteMiddle&=~Om_PUSHBUTTON_LAMP_1;		
+ 771               		.loc 1 1132 0
+ 772 03fa 8091 0000 		lds r24,outputByteMiddle
+ 773 03fe 8C7F      		andi r24,lo8(-4)
+ 774 0400 8093 0000 		sts outputByteMiddle,r24
+1133:vec9_io.c     **** 
+1134:vec9_io.c     **** 			if(lampCounter&0x01)
+ 775               		.loc 1 1134 0
+ 776 0404 9091 0000 		lds r25,lampCounter.3905
+ 777 0408 90FF      		sbrs r25,0
+ 778 040a 00C0      		rjmp .L91
+1135:vec9_io.c     **** 			{
+1136:vec9_io.c     **** 				outputByteMiddle|=Om_PUSHBUTTON_LAMP_0;
+ 779               		.loc 1 1136 0
+ 780 040c 8260      		ori r24,lo8(2)
+ 781 040e 8093 0000 		sts outputByteMiddle,r24
+ 782               	.L91:
+1137:vec9_io.c     **** 			}
+1138:vec9_io.c     **** 			if(lampCounter&0x02)
+ 783               		.loc 1 1138 0
+ 784 0412 91FF      		sbrs r25,1
+ 785 0414 00C0      		rjmp .L92
+1139:vec9_io.c     **** 			{
+1140:vec9_io.c     **** 				outputByteMiddle|=Om_PUSHBUTTON_LAMP_1;
+ 786               		.loc 1 1140 0
+ 787 0416 8091 0000 		lds r24,outputByteMiddle
+ 788 041a 8160      		ori r24,lo8(1)
+ 789 041c 8093 0000 		sts outputByteMiddle,r24
+ 790               	.L92:
+1141:vec9_io.c     **** 			}
+1142:vec9_io.c     **** 
+1143:vec9_io.c     **** 			SetTimer(TIMER_2,(LAMP_TIME));
+ 791               		.loc 1 1143 0
+ 792 0420 60EA      		ldi r22,lo8(-96)
+ 793 0422 7FE0      		ldi r23,lo8(15)
+ 794 0424 81E0      		ldi r24,lo8(1)
+ 795 0426 0E94 0000 		call SetTimer
+ 796               	.LVL47:
+ 797               	.L88:
+1144:vec9_io.c     **** 		}
+1145:vec9_io.c     **** 
+1146:vec9_io.c     **** 		// Set pushbutton lamps if we're holding them, clear on release
+1147:vec9_io.c     **** 		if(keyState&Im_PUSHBUTTON_0)		
+ 798               		.loc 1 1147 0
+ 799 042a 8091 0000 		lds r24,keyState
+ 800 042e 9091 0000 		lds r25,keyState+1
+ 801 0432 4091 0000 		lds r20,outputByteMiddle
+ 802 0436 92FF      		sbrs r25,2
+ 803 0438 00C0      		rjmp .L93
+1148:vec9_io.c     **** 		{
+1149:vec9_io.c     **** 			outputByteMiddle|=Om_PUSHBUTTON_LAMP_0;
+ 804               		.loc 1 1149 0
+ 805 043a 4260      		ori r20,lo8(2)
+ 806 043c 00C0      		rjmp .L207
+ 807               	.L93:
+1150:vec9_io.c     **** 		}
+1151:vec9_io.c     **** 		else if(newKeysReleased&Im_PUSHBUTTON_0)
+ 808               		.loc 1 1151 0
+ 809 043e 2091 0000 		lds r18,newKeysReleased
+ 810 0442 3091 0000 		lds r19,newKeysReleased+1
+ 811 0446 32FF      		sbrs r19,2
+ 812 0448 00C0      		rjmp .L94
+1152:vec9_io.c     **** 		{
+1153:vec9_io.c     **** 			outputByteMiddle&=~Om_PUSHBUTTON_LAMP_0;		
+ 813               		.loc 1 1153 0
+ 814 044a 4D7F      		andi r20,lo8(-3)
+ 815               	.L207:
+ 816 044c 4093 0000 		sts outputByteMiddle,r20
+ 817               	.L94:
+ 818 0450 4091 0000 		lds r20,outputByteMiddle
+1154:vec9_io.c     **** 		}
+1155:vec9_io.c     **** 
+1156:vec9_io.c     **** 		if(keyState&Im_PUSHBUTTON_1)		
+ 819               		.loc 1 1156 0
+ 820 0454 93FF      		sbrs r25,3
+ 821 0456 00C0      		rjmp .L95
+1157:vec9_io.c     **** 		{
+1158:vec9_io.c     **** 			outputByteMiddle|=Om_PUSHBUTTON_LAMP_1;
+ 822               		.loc 1 1158 0
+ 823 0458 4160      		ori r20,lo8(1)
+ 824 045a 00C0      		rjmp .L208
+ 825               	.L95:
+1159:vec9_io.c     **** 		}
+1160:vec9_io.c     **** 		else if(newKeysReleased&Im_PUSHBUTTON_1)
+ 826               		.loc 1 1160 0
+ 827 045c 2091 0000 		lds r18,newKeysReleased
+ 828 0460 3091 0000 		lds r19,newKeysReleased+1
+ 829 0464 33FF      		sbrs r19,3
+ 830 0466 00C0      		rjmp .L96
+1161:vec9_io.c     **** 		{
+1162:vec9_io.c     **** 			outputByteMiddle&=~Om_PUSHBUTTON_LAMP_1;		
+ 831               		.loc 1 1162 0
+ 832 0468 4E7F      		andi r20,lo8(-2)
+ 833               	.L208:
+ 834 046a 4093 0000 		sts outputByteMiddle,r20
+ 835               	.L96:
+1163:vec9_io.c     **** 		}
+1164:vec9_io.c     **** 
+1165:vec9_io.c     **** 		// Clear flight indicators
+1166:vec9_io.c     **** 		outputByteHigh=0;
+ 836               		.loc 1 1166 0
+ 837 046e 1092 0000 		sts outputByteHigh,__zero_reg__
+1167:vec9_io.c     **** 		outputByteMiddle&=~(Om_FLIGHT_IND_5|Om_FLIGHT_IND_6|Om_FLIGHT_IND_7|Om_FLIGHT_IND_8|Om_FLIGHT_IND
+ 838               		.loc 1 1167 0
+ 839 0472 2091 0000 		lds r18,outputByteMiddle
+ 840 0476 2770      		andi r18,lo8(7)
+ 841 0478 2093 0000 		sts outputByteMiddle,r18
+1168:vec9_io.c     **** 		
+1169:vec9_io.c     **** 		// Clear Red LEDs
+1170:vec9_io.c     **** 		outputByteLow&=~(Om_RED_LED_0|Om_RED_LED_1|Om_RED_LED_2|Om_RED_LED_3);
+ 842               		.loc 1 1170 0
+ 843 047c 3091 0000 		lds r19,outputByteLow
+ 844 0480 307F      		andi r19,lo8(-16)
+1171:vec9_io.c     **** 
+1172:vec9_io.c     **** 		// Put toggle switches directly on red LEDs
+1173:vec9_io.c     **** 		if(keyState&Im_TOGGLE_0)		
+ 845               		.loc 1 1173 0
+ 846 0482 86FD      		sbrc r24,6
+1174:vec9_io.c     **** 		{
+1175:vec9_io.c     **** 			outputByteLow|=Om_RED_LED_0;
+ 847               		.loc 1 1175 0
+ 848 0484 3860      		ori r19,lo8(8)
+ 849               	.L209:
+ 850 0486 3093 0000 		sts outputByteLow,r19
+1176:vec9_io.c     **** 		}
+1177:vec9_io.c     **** 		if(keyState&Im_TOGGLE_1)		
+ 851               		.loc 1 1177 0
+ 852 048a 87FF      		sbrs r24,7
+ 853 048c 00C0      		rjmp .L99
+1178:vec9_io.c     **** 		{
+1179:vec9_io.c     **** 			outputByteLow|=Om_RED_LED_1;
+ 854               		.loc 1 1179 0
+ 855 048e 3091 0000 		lds r19,outputByteLow
+ 856 0492 3460      		ori r19,lo8(4)
+ 857 0494 3093 0000 		sts outputByteLow,r19
+ 858               	.L99:
+1180:vec9_io.c     **** 		}
+1181:vec9_io.c     **** 		if(keyState&Im_TOGGLE_2)		
+ 859               		.loc 1 1181 0
+ 860 0498 90FF      		sbrs r25,0
+ 861 049a 00C0      		rjmp .L100
+1182:vec9_io.c     **** 		{
+1183:vec9_io.c     **** 			outputByteLow|=Om_RED_LED_2;
+ 862               		.loc 1 1183 0
+ 863 049c 3091 0000 		lds r19,outputByteLow
+ 864 04a0 3260      		ori r19,lo8(2)
+ 865 04a2 3093 0000 		sts outputByteLow,r19
+ 866               	.L100:
+1184:vec9_io.c     **** 		}
+1185:vec9_io.c     **** 		if(keyState&Im_TOGGLE_3)		
+ 867               		.loc 1 1185 0
+ 868 04a6 91FF      		sbrs r25,1
+ 869 04a8 00C0      		rjmp .L101
+1186:vec9_io.c     **** 		{
+1187:vec9_io.c     **** 			outputByteLow|=Om_RED_LED_3;
+ 870               		.loc 1 1187 0
+ 871 04aa 3091 0000 		lds r19,outputByteLow
+ 872 04ae 3160      		ori r19,lo8(1)
+ 873 04b0 3093 0000 		sts outputByteLow,r19
+ 874               	.L101:
+1188:vec9_io.c     **** 		}
+1189:vec9_io.c     **** 
+1190:vec9_io.c     **** 		// Triggers to flight indicators
+1191:vec9_io.c     **** 
+1192:vec9_io.c     **** 		if(keyState&Im_R_MAIN_TRIG)
+ 875               		.loc 1 1192 0
+ 876 04b4 80FF      		sbrs r24,0
+ 877 04b6 00C0      		rjmp .L102
+1193:vec9_io.c     **** 		{
+1194:vec9_io.c     **** 			outputByteHigh|=Om_FLIGHT_IND_0;
+ 878               		.loc 1 1194 0
+ 879 04b8 30E1      		ldi r19,lo8(16)
+ 880 04ba 3093 0000 		sts outputByteHigh,r19
+ 881               	.L102:
+1195:vec9_io.c     **** 		}
+1196:vec9_io.c     **** 		if(keyState&Im_R_THUMB_TRIG)
+ 882               		.loc 1 1196 0
+ 883 04be 81FF      		sbrs r24,1
+ 884 04c0 00C0      		rjmp .L103
+1197:vec9_io.c     **** 		{
+1198:vec9_io.c     **** 			outputByteHigh|=Om_FLIGHT_IND_1;
+ 885               		.loc 1 1198 0
+ 886 04c2 3091 0000 		lds r19,outputByteHigh
+ 887 04c6 3860      		ori r19,lo8(8)
+ 888 04c8 3093 0000 		sts outputByteHigh,r19
+ 889               	.L103:
+1199:vec9_io.c     **** 		}
+1200:vec9_io.c     **** 		if(keyState&Im_R_GRIP_TRIG)
+ 890               		.loc 1 1200 0
+ 891 04cc 82FF      		sbrs r24,2
+ 892 04ce 00C0      		rjmp .L104
+1201:vec9_io.c     **** 		{
+1202:vec9_io.c     **** 			outputByteHigh|=Om_FLIGHT_IND_2;
+ 893               		.loc 1 1202 0
+ 894 04d0 3091 0000 		lds r19,outputByteHigh
+ 895 04d4 3460      		ori r19,lo8(4)
+ 896 04d6 3093 0000 		sts outputByteHigh,r19
+ 897               	.L104:
+1203:vec9_io.c     **** 		}
+1204:vec9_io.c     **** 		if(keyState&Im_L_MAIN_TRIG)
+ 898               		.loc 1 1204 0
+ 899 04da 83FF      		sbrs r24,3
+ 900 04dc 00C0      		rjmp .L105
+1205:vec9_io.c     **** 		{
+1206:vec9_io.c     **** 			outputByteHigh|=Om_FLIGHT_IND_3;
+ 901               		.loc 1 1206 0
+ 902 04de 3091 0000 		lds r19,outputByteHigh
+ 903 04e2 3260      		ori r19,lo8(2)
+ 904 04e4 3093 0000 		sts outputByteHigh,r19
+ 905               	.L105:
+1207:vec9_io.c     **** 		}
+1208:vec9_io.c     **** 		if(keyState&Im_L_THUMB_TRIG)
+ 906               		.loc 1 1208 0
+ 907 04e8 84FF      		sbrs r24,4
+ 908 04ea 00C0      		rjmp .L106
+1209:vec9_io.c     **** 		{
+1210:vec9_io.c     **** 			outputByteHigh|=Om_FLIGHT_IND_4;
+ 909               		.loc 1 1210 0
+ 910 04ec 3091 0000 		lds r19,outputByteHigh
+ 911 04f0 3160      		ori r19,lo8(1)
+ 912 04f2 3093 0000 		sts outputByteHigh,r19
+ 913               	.L106:
+1211:vec9_io.c     **** 		}
+1212:vec9_io.c     **** 		if(keyState&Im_L_GRIP_TRIG)
+ 914               		.loc 1 1212 0
+ 915 04f6 85FF      		sbrs r24,5
+ 916 04f8 00C0      		rjmp .L107
+1213:vec9_io.c     **** 		{
+1214:vec9_io.c     **** 			outputByteMiddle|=Om_FLIGHT_IND_5;
+ 917               		.loc 1 1214 0
+ 918 04fa 2068      		ori r18,lo8(-128)
+ 919 04fc 2093 0000 		sts outputByteMiddle,r18
+ 920               	.L107:
+1215:vec9_io.c     **** 		}
+1216:vec9_io.c     **** 
+1217:vec9_io.c     **** 		// Analog to flight indicators
+1218:vec9_io.c     **** 
+1219:vec9_io.c     **** 		if(newAdcResult[ADC_YOKE_PITCH]==true)
+ 921               		.loc 1 1219 0
+ 922 0500 2091 0000 		lds r18,newAdcResult
+ 923 0504 2130      		cpi r18,lo8(1)
+ 924 0506 01F4      		brne .L108
+1220:vec9_io.c     **** 		{
+1221:vec9_io.c     **** 			analogPitch=(unsigned char)(adcResults[ADC_YOKE_PITCH]/8);		// Get back to 8 bits
+ 925               		.loc 1 1221 0
+ 926 0508 2091 0000 		lds r18,adcResults
+ 927 050c 3091 0000 		lds r19,adcResults+1
+ 928 0510 53E0      		ldi r21,3
+ 929               		1:
+ 930 0512 3695      		lsr r19
+ 931 0514 2795      		ror r18
+ 932 0516 5A95      		dec r21
+ 933 0518 01F4      		brne 1b
+ 934 051a 2093 0000 		sts analogPitch,r18
+ 935               	.L108:
+1222:vec9_io.c     **** 		}
+1223:vec9_io.c     **** 		if(newAdcResult[ADC_YOKE_ROLL]==true)
+ 936               		.loc 1 1223 0
+ 937 051e 2091 0000 		lds r18,newAdcResult+1
+ 938 0522 2130      		cpi r18,lo8(1)
+ 939 0524 01F4      		brne .L109
+1224:vec9_io.c     **** 		{
+1225:vec9_io.c     **** 			analogRoll=(unsigned char)(adcResults[ADC_YOKE_ROLL]/8);		// Get back to 8 bits
+ 940               		.loc 1 1225 0
+ 941 0526 2091 0000 		lds r18,adcResults+2
+ 942 052a 3091 0000 		lds r19,adcResults+2+1
+ 943 052e 43E0      		ldi r20,3
+ 944               		1:
+ 945 0530 3695      		lsr r19
+ 946 0532 2795      		ror r18
+ 947 0534 4A95      		dec r20
+ 948 0536 01F4      		brne 1b
+ 949 0538 2093 0000 		sts analogRoll,r18
+ 950               	.L109:
+1226:vec9_io.c     **** 		}
+1227:vec9_io.c     **** 
+1228:vec9_io.c     **** 		if(analogPitch<70)
+ 951               		.loc 1 1228 0
+ 952 053c 2091 0000 		lds r18,analogPitch
+ 953 0540 2634      		cpi r18,lo8(70)
+ 954 0542 00F4      		brsh .L110
+1229:vec9_io.c     **** 		{
+1230:vec9_io.c     **** 			outputByteMiddle|=Om_FLIGHT_IND_6;
+ 955               		.loc 1 1230 0
+ 956 0544 2091 0000 		lds r18,outputByteMiddle
+ 957 0548 2064      		ori r18,lo8(64)
+ 958 054a 00C0      		rjmp .L210
+ 959               	.L110:
+1231:vec9_io.c     **** 		}
+1232:vec9_io.c     **** 		if(analogPitch>140)
+ 960               		.loc 1 1232 0
+ 961 054c 2D38      		cpi r18,lo8(-115)
+ 962 054e 00F0      		brlo .L111
+1233:vec9_io.c     **** 		{
+1234:vec9_io.c     **** 			outputByteMiddle|=Om_FLIGHT_IND_7;
+ 963               		.loc 1 1234 0
+ 964 0550 2091 0000 		lds r18,outputByteMiddle
+ 965 0554 2062      		ori r18,lo8(32)
+ 966               	.L210:
+ 967 0556 2093 0000 		sts outputByteMiddle,r18
+ 968               	.L111:
+1235:vec9_io.c     **** 		}
+1236:vec9_io.c     **** 		if(analogRoll<100)
+ 969               		.loc 1 1236 0
+ 970 055a 2091 0000 		lds r18,analogRoll
+ 971 055e 2436      		cpi r18,lo8(100)
+ 972 0560 00F4      		brsh .L112
+1237:vec9_io.c     **** 		{
+1238:vec9_io.c     **** 			outputByteMiddle|=Om_FLIGHT_IND_8;
+ 973               		.loc 1 1238 0
+ 974 0562 2091 0000 		lds r18,outputByteMiddle
+ 975 0566 2061      		ori r18,lo8(16)
+ 976 0568 00C0      		rjmp .L211
+ 977               	.L112:
+1239:vec9_io.c     **** 		}
+1240:vec9_io.c     **** 		if(analogRoll>130)
+ 978               		.loc 1 1240 0
+ 979 056a 2338      		cpi r18,lo8(-125)
+ 980 056c 00F0      		brlo .L113
+1241:vec9_io.c     **** 		{
+1242:vec9_io.c     **** 			outputByteMiddle|=Om_FLIGHT_IND_9;
+ 981               		.loc 1 1242 0
+ 982 056e 2091 0000 		lds r18,outputByteMiddle
+ 983 0572 2860      		ori r18,lo8(8)
+ 984               	.L211:
+ 985 0574 2093 0000 		sts outputByteMiddle,r18
+ 986               	.L113:
+1243:vec9_io.c     **** 		}
+1244:vec9_io.c     **** 
+1245:vec9_io.c     **** 		// Sound of the police
+1246:vec9_io.c     **** 		if(keyState&Im_COIN)
+ 987               		.loc 1 1246 0
+ 988 0578 94FF      		sbrs r25,4
+ 989 057a 00C0      		rjmp .L114
+1247:vec9_io.c     **** 		{
+1248:vec9_io.c     **** 			SetTimer(TIMER_3,(SECOND));
+ 990               		.loc 1 1248 0
+ 991 057c 68EB      		ldi r22,lo8(-72)
+ 992 057e 7BE0      		ldi r23,lo8(11)
+ 993 0580 82E0      		ldi r24,lo8(2)
+ 994 0582 0E94 0000 		call SetTimer
+ 995               	.LVL48:
+1249:vec9_io.c     **** 			outputByteMiddle|=Om_AIR_HORN;
+ 996               		.loc 1 1249 0
+ 997 0586 8091 0000 		lds r24,outputByteMiddle
+ 998 058a 8460      		ori r24,lo8(4)
+ 999 058c 8093 0000 		sts outputByteMiddle,r24
+ 1000               	.L114:
+1250:vec9_io.c     **** 		}
+1251:vec9_io.c     **** 
+1252:vec9_io.c     **** 		if(CheckTimer(TIMER_3))
+ 1001               		.loc 1 1252 0
+ 1002 0590 82E0      		ldi r24,lo8(2)
+ 1003 0592 0E94 0000 		call CheckTimer
+ 1004               	.LVL49:
+ 1005 0596 8823      		tst r24
+ 1006 0598 01F0      		breq .L115
+1253:vec9_io.c     **** 		{
+1254:vec9_io.c     **** 			outputByteMiddle&=~Om_AIR_HORN;			
+ 1007               		.loc 1 1254 0
+ 1008 059a 8091 0000 		lds r24,outputByteMiddle
+ 1009 059e 8B7F      		andi r24,lo8(-5)
+ 1010 05a0 8093 0000 		sts outputByteMiddle,r24
+ 1011               	.L115:
+1255:vec9_io.c     **** 		}
+1256:vec9_io.c     **** 
+1257:vec9_io.c     **** 		// Test button resets chases
+1258:vec9_io.c     **** 		if(keyState&Im_TEST)
+ 1012               		.loc 1 1258 0
+ 1013 05a4 8091 0000 		lds r24,keyState
+ 1014 05a8 9091 0000 		lds r25,keyState+1
+ 1015 05ac 95FD      		sbrc r25,5
+1259:vec9_io.c     **** 		{
+1260:vec9_io.c     **** 			subState=SS_0;
+ 1016               		.loc 1 1260 0
+ 1017 05ae 1092 0000 		sts subState,__zero_reg__
+ 1018               	.L116:
+1261:vec9_io.c     **** 		}
+1262:vec9_io.c     **** 
+1263:vec9_io.c     **** 		if((lastOutputByteHigh!=outputByteHigh)||(lastOutputByteMiddle!=outputByteMiddle)||(lastOutputByt
+ 1019               		.loc 1 1263 0
+ 1020 05b2 9091 0000 		lds r25,lastOutputByteHigh.3901
+ 1021 05b6 8091 0000 		lds r24,outputByteHigh
+ 1022 05ba 9813      		cpse r25,r24
+ 1023 05bc 00C0      		rjmp .L117
+ 1024               		.loc 1 1263 0 is_stmt 0 discriminator 1
+ 1025 05be 9091 0000 		lds r25,lastOutputByteMiddle.3902
+ 1026 05c2 8091 0000 		lds r24,outputByteMiddle
+ 1027 05c6 9813      		cpse r25,r24
+ 1028 05c8 00C0      		rjmp .L117
+ 1029 05ca 9091 0000 		lds r25,lastOutputByteLow.3903
+ 1030 05ce 8091 0000 		lds r24,outputByteLow
+ 1031 05d2 9813      		cpse r25,r24
+ 1032               	.L117:
+1264:vec9_io.c     **** 		{
+1265:vec9_io.c     **** 			SetOutputs();
+ 1033               		.loc 1 1265 0 is_stmt 1
+ 1034 05d4 0E94 0000 		call SetOutputs
+ 1035               	.LVL50:
+ 1036               	.L67:
+ 1037               	.LBB14:
+ 1038               	.LBB15:
+ 261:vec9_io.c     **** 	sreg=SREG;
+ 1039               		.loc 1 261 0
+ 1040 05d8 9FB7      		in r25,__SREG__
+ 1041               	.LVL51:
+ 262:vec9_io.c     **** 	cli();
+ 1042               		.loc 1 262 0
+ 1043               	/* #APP */
+ 1044               	 ;  262 "vec9_io.c" 1
+ 1045 05da F894      		cli
+ 1046               	 ;  0 "" 2
+ 1047               	.LVL52:
+ 265:vec9_io.c     **** 	if(bytesInRxFifo)	// Got anything in fifo?
+ 1048               		.loc 1 265 0
+ 1049               	/* #NOAPP */
+ 1050 05dc 8091 0000 		lds r24,bytesInRxFifo
+ 1051               	.LVL53:
+ 270:vec9_io.c     **** 	SREG=sreg;
+ 1052               		.loc 1 270 0
+ 1053 05e0 9FBF      		out __SREG__,r25
+ 1054               	.LBE15:
+ 1055               	.LBE14:
+1266:vec9_io.c     **** 		}
+1267:vec9_io.c     **** 	}
+1268:vec9_io.c     **** 
+1269:vec9_io.c     **** 	if(RxFifoNotEmpty())		// Once the game takes control, stop messing with outputs.
+ 1056               		.loc 1 1269 0
+ 1057 05e2 8823      		tst r24
+ 1058 05e4 01F0      		breq .L65
+1270:vec9_io.c     **** 	{
+1271:vec9_io.c     **** 		outputByteHigh=0;
+ 1059               		.loc 1 1271 0
+ 1060 05e6 1092 0000 		sts outputByteHigh,__zero_reg__
+1272:vec9_io.c     **** 		outputByteMiddle=0;
+ 1061               		.loc 1 1272 0
+ 1062 05ea 1092 0000 		sts outputByteMiddle,__zero_reg__
+1273:vec9_io.c     **** 		outputByteLow=0;
+ 1063               		.loc 1 1273 0
+ 1064 05ee 1092 0000 		sts outputByteLow,__zero_reg__
+1274:vec9_io.c     **** 		SetOutputs();
+ 1065               		.loc 1 1274 0
+ 1066 05f2 0E94 0000 		call SetOutputs
+ 1067               	.LVL54:
+ 1068               	.LBB16:
+ 1069               	.LBB17:
+  97:vec9_io.c     **** 	State=newState;
+ 1070               		.loc 1 97 0
+ 1071 05f6 80E0      		ldi r24,lo8(gs(DoUpdateIo))
+ 1072 05f8 90E0      		ldi r25,hi8(gs(DoUpdateIo))
+ 1073 05fa 8093 0000 		sts State,r24
+ 1074 05fe 9093 0000 		sts State+1,r25
+  98:vec9_io.c     **** 	subState=SS_0;
+ 1075               		.loc 1 98 0
+ 1076 0602 1092 0000 		sts subState,__zero_reg__
+ 1077               	.LVL55:
+ 1078               	.L65:
+ 1079               	/* epilogue start */
+ 1080               	.LBE17:
+ 1081               	.LBE16:
+1275:vec9_io.c     **** 		SetState(DoUpdateIo);
+1276:vec9_io.c     **** 	}
+1277:vec9_io.c     **** }
+ 1082               		.loc 1 1277 0
+ 1083 0606 CF91      		pop r28
+ 1084 0608 0895      		ret
+ 1085               		.cfi_endproc
+ 1086               	.LFE24:
+ 1088               	.global	SetState
+ 1090               	SetState:
+ 1091               	.LFB2:
+  96:vec9_io.c     **** {
+ 1092               		.loc 1 96 0
+ 1093               		.cfi_startproc
+ 1094               	.LVL56:
+ 1095               	/* prologue: function */
+ 1096               	/* frame size = 0 */
+ 1097               	/* stack size = 0 */
+ 1098               	.L__stack_usage = 0
+  97:vec9_io.c     **** 	State=newState;
+ 1099               		.loc 1 97 0
+ 1100 060a 8093 0000 		sts State,r24
+ 1101 060e 9093 0000 		sts State+1,r25
+  98:vec9_io.c     **** 	subState=SS_0;
+ 1102               		.loc 1 98 0
+ 1103 0612 1092 0000 		sts subState,__zero_reg__
+ 1104 0616 0895      		ret
+ 1105               		.cfi_endproc
+ 1106               	.LFE2:
+ 1108               	.global	__vector_default
+ 1110               	__vector_default:
+ 1111               	.LFB3:
+ 107:vec9_io.c     **** {
+ 1112               		.loc 1 107 0
+ 1113               		.cfi_startproc
+ 1114 0618 1F92      		push r1
+ 1115               	.LCFI3:
+ 1116               		.cfi_def_cfa_offset 3
+ 1117               		.cfi_offset 1, -2
+ 1118 061a 0F92      		push r0
+ 1119               	.LCFI4:
+ 1120               		.cfi_def_cfa_offset 4
+ 1121               		.cfi_offset 0, -3
+ 1122 061c 0FB6      		in r0,__SREG__
+ 1123 061e 0F92      		push r0
+ 1124 0620 1124      		clr __zero_reg__
+ 1125               	/* prologue: Signal */
+ 1126               	/* frame size = 0 */
+ 1127               	/* stack size = 3 */
+ 1128               	.L__stack_usage = 3
+ 114:vec9_io.c     **** 	asm("jmp 0000");			// head to normal reset vector, should never happen
+ 1129               		.loc 1 114 0
+ 1130               	/* #APP */
+ 1131               	 ;  114 "vec9_io.c" 1
+ 1132 0622 0C94 0000 		jmp 0000
+ 1133               	 ;  0 "" 2
+ 1134               	/* epilogue start */
+ 115:vec9_io.c     **** }
+ 1135               		.loc 1 115 0
+ 1136               	/* #NOAPP */
+ 1137 0626 0F90      		pop r0
+ 1138 0628 0FBE      		out __SREG__,r0
+ 1139 062a 0F90      		pop r0
+ 1140 062c 1F90      		pop r1
+ 1141 062e 1895      		reti
+ 1142               		.cfi_endproc
+ 1143               	.LFE3:
+ 1145               	.global	__vector_47
+ 1147               	__vector_47:
+ 1148               	.LFB5:
+ 152:vec9_io.c     **** {
+ 1149               		.loc 1 152 0
+ 1150               		.cfi_startproc
+ 1151 0630 1F92      		push r1
+ 1152               	.LCFI5:
+ 1153               		.cfi_def_cfa_offset 3
+ 1154               		.cfi_offset 1, -2
+ 1155 0632 0F92      		push r0
+ 1156               	.LCFI6:
+ 1157               		.cfi_def_cfa_offset 4
+ 1158               		.cfi_offset 0, -3
+ 1159 0634 0FB6      		in r0,__SREG__
+ 1160 0636 0F92      		push r0
+ 1161 0638 1124      		clr __zero_reg__
+ 1162 063a 8F93      		push r24
+ 1163               	.LCFI7:
+ 1164               		.cfi_def_cfa_offset 5
+ 1165               		.cfi_offset 24, -4
+ 1166 063c 9F93      		push r25
+ 1167               	.LCFI8:
+ 1168               		.cfi_def_cfa_offset 6
+ 1169               		.cfi_offset 25, -5
+ 1170               	/* prologue: Signal */
+ 1171               	/* frame size = 0 */
+ 1172               	/* stack size = 5 */
+ 1173               	.L__stack_usage = 5
+ 153:vec9_io.c     **** 	systemTicks++;					// Increment the system ticks.
+ 1174               		.loc 1 153 0
+ 1175 063e 8091 0000 		lds r24,systemTicks
+ 1176 0642 9091 0000 		lds r25,systemTicks+1
+ 1177 0646 0196      		adiw r24,1
+ 1178 0648 8093 0000 		sts systemTicks,r24
+ 1179 064c 9093 0000 		sts systemTicks+1,r25
+ 1180               	/* epilogue start */
+ 154:vec9_io.c     **** }
+ 1181               		.loc 1 154 0
+ 1182 0650 9F91      		pop r25
+ 1183 0652 8F91      		pop r24
+ 1184 0654 0F90      		pop r0
+ 1185 0656 0FBE      		out __SREG__,r0
+ 1186 0658 0F90      		pop r0
+ 1187 065a 1F90      		pop r1
+ 1188 065c 1895      		reti
+ 1189               		.cfi_endproc
+ 1190               	.LFE5:
+ 1192               	.global	__vector_119
+ 1194               	__vector_119:
+ 1195               	.LFB8:
+ 236:vec9_io.c     **** {
+ 1196               		.loc 1 236 0
+ 1197               		.cfi_startproc
+ 1198 065e 1F92      		push r1
+ 1199               	.LCFI9:
+ 1200               		.cfi_def_cfa_offset 3
+ 1201               		.cfi_offset 1, -2
+ 1202 0660 0F92      		push r0
+ 1203               	.LCFI10:
+ 1204               		.cfi_def_cfa_offset 4
+ 1205               		.cfi_offset 0, -3
+ 1206 0662 0FB6      		in r0,__SREG__
+ 1207 0664 0F92      		push r0
+ 1208 0666 1124      		clr __zero_reg__
+ 1209 0668 0BB6      		in r0,__RAMPZ__
+ 1210 066a 0F92      		push r0
+ 1211 066c 8F93      		push r24
+ 1212               	.LCFI11:
+ 1213               		.cfi_def_cfa_offset 5
+ 1214               		.cfi_offset 24, -4
+ 1215 066e EF93      		push r30
+ 1216               	.LCFI12:
+ 1217               		.cfi_def_cfa_offset 6
+ 1218               		.cfi_offset 30, -5
+ 1219 0670 FF93      		push r31
+ 1220               	.LCFI13:
+ 1221               		.cfi_def_cfa_offset 7
+ 1222               		.cfi_offset 31, -6
+ 1223               	/* prologue: Signal */
+ 1224               	/* frame size = 0 */
+ 1225               	/* stack size = 7 */
+ 1226               	.L__stack_usage = 7
+ 237:vec9_io.c     **** 	if(bytesInRxFifo<MAX_RX_FIFO_BYTES)
+ 1227               		.loc 1 237 0
+ 1228 0672 8091 0000 		lds r24,bytesInRxFifo
+ 1229 0676 8034      		cpi r24,lo8(64)
+ 1230 0678 00F4      		brsh .L217
+ 239:vec9_io.c     **** 		rxFifo[fifoWritePointer]=SERIAL_USART.DATA;	// Put data in fifo at current write pointer
+ 1231               		.loc 1 239 0
+ 1232 067a E091 0000 		lds r30,fifoWritePointer
+ 1233 067e F0E0      		ldi r31,0
+ 1234 0680 8091 A00B 		lds r24,2976
+ 1235 0684 E050      		subi r30,lo8(-(rxFifo))
+ 1236 0686 F040      		sbci r31,hi8(-(rxFifo))
+ 1237 0688 8083      		st Z,r24
+ 240:vec9_io.c     **** 		fifoWritePointer++;							// Move write pointer forward
+ 1238               		.loc 1 240 0
+ 1239 068a 8091 0000 		lds r24,fifoWritePointer
+ 1240 068e 8F5F      		subi r24,lo8(-(1))
+ 1241 0690 8093 0000 		sts fifoWritePointer,r24
+ 241:vec9_io.c     **** 		if(fifoWritePointer>=MAX_RX_FIFO_BYTES)		// Roll write pointer around end of ring buffer if neede
+ 1242               		.loc 1 241 0
+ 1243 0694 8091 0000 		lds r24,fifoWritePointer
+ 1244 0698 8034      		cpi r24,lo8(64)
+ 1245 069a 00F0      		brlo .L218
+ 243:vec9_io.c     **** 			fifoWritePointer=0;
+ 1246               		.loc 1 243 0
+ 1247 069c 1092 0000 		sts fifoWritePointer,__zero_reg__
+ 1248               	.L218:
+ 245:vec9_io.c     **** 		bytesInRxFifo++;							// One more byte in the fifo
+ 1249               		.loc 1 245 0
+ 1250 06a0 8091 0000 		lds r24,bytesInRxFifo
+ 1251 06a4 8F5F      		subi r24,lo8(-(1))
+ 1252 06a6 8093 0000 		sts bytesInRxFifo,r24
+ 1253 06aa 00C0      		rjmp .L216
+ 1254               	.L217:
+ 249:vec9_io.c     **** 		dump=SERIAL_USART.DATA;		// For whatever reason, writing a one to the flag here doesn't seem to w
+ 1255               		.loc 1 249 0
+ 1256 06ac 8091 A00B 		lds r24,2976
+ 1257 06b0 8093 0000 		sts dump,r24
+ 1258               	.L216:
+ 1259               	/* epilogue start */
+ 251:vec9_io.c     **** }
+ 1260               		.loc 1 251 0
+ 1261 06b4 FF91      		pop r31
+ 1262 06b6 EF91      		pop r30
+ 1263 06b8 8F91      		pop r24
+ 1264 06ba 0F90      		pop r0
+ 1265 06bc 0BBE      		out __RAMPZ__,r0
+ 1266 06be 0F90      		pop r0
+ 1267 06c0 0FBE      		out __SREG__,r0
+ 1268 06c2 0F90      		pop r0
+ 1269 06c4 1F90      		pop r1
+ 1270 06c6 1895      		reti
+ 1271               		.cfi_endproc
+ 1272               	.LFE8:
+ 1274               	.global	GetByteFromRxFifo
+ 1276               	GetByteFromRxFifo:
+ 1277               	.LFB10:
+ 276:vec9_io.c     **** {
+ 1278               		.loc 1 276 0
+ 1279               		.cfi_startproc
+ 1280               	/* prologue: function */
+ 1281               	/* frame size = 0 */
+ 1282               	/* stack size = 0 */
+ 1283               	.L__stack_usage = 0
+ 281:vec9_io.c     **** 	sreg=SREG;
+ 1284               		.loc 1 281 0
+ 1285 06c8 2FB7      		in r18,__SREG__
+ 1286               	.LVL57:
+ 282:vec9_io.c     **** 	cli();
+ 1287               		.loc 1 282 0
+ 1288               	/* #APP */
+ 1289               	 ;  282 "vec9_io.c" 1
+ 1290 06ca F894      		cli
+ 1291               	 ;  0 "" 2
+ 284:vec9_io.c     **** 	if(bytesInRxFifo)	// Got anything in fifo?
+ 1292               		.loc 1 284 0
+ 1293               	/* #NOAPP */
+ 1294 06cc 8091 0000 		lds r24,bytesInRxFifo
+ 1295 06d0 8823      		tst r24
+ 1296 06d2 01F0      		breq .L221
+ 286:vec9_io.c     **** 		theByte=rxFifo[fifoReadPointer];
+ 1297               		.loc 1 286 0
+ 1298 06d4 E091 0000 		lds r30,fifoReadPointer
+ 1299 06d8 F0E0      		ldi r31,0
+ 1300 06da E050      		subi r30,lo8(-(rxFifo))
+ 1301 06dc F040      		sbci r31,hi8(-(rxFifo))
+ 1302 06de 8081      		ld r24,Z
+ 1303               	.LVL58:
+ 287:vec9_io.c     **** 		fifoReadPointer++;							// Move pointer forward
+ 1304               		.loc 1 287 0
+ 1305 06e0 9091 0000 		lds r25,fifoReadPointer
+ 1306 06e4 9F5F      		subi r25,lo8(-(1))
+ 1307 06e6 9093 0000 		sts fifoReadPointer,r25
+ 288:vec9_io.c     **** 		if(fifoReadPointer>=MAX_RX_FIFO_BYTES)		// Roll pointer around end of ring buffer if needed
+ 1308               		.loc 1 288 0
+ 1309 06ea 9091 0000 		lds r25,fifoReadPointer
+ 1310 06ee 9034      		cpi r25,lo8(64)
+ 1311 06f0 00F0      		brlo .L222
+ 290:vec9_io.c     **** 			fifoReadPointer=0;
+ 1312               		.loc 1 290 0
+ 1313 06f2 1092 0000 		sts fifoReadPointer,__zero_reg__
+ 1314               	.L222:
+ 292:vec9_io.c     **** 		bytesInRxFifo--;							// One less byte in the fifo
+ 1315               		.loc 1 292 0
+ 1316 06f6 9091 0000 		lds r25,bytesInRxFifo
+ 1317 06fa 9150      		subi r25,lo8(-(-1))
+ 1318 06fc 9093 0000 		sts bytesInRxFifo,r25
+ 294:vec9_io.c     **** 		SREG=sreg;
+ 1319               		.loc 1 294 0
+ 1320 0700 2FBF      		out __SREG__,r18
+ 295:vec9_io.c     **** 		return(theByte);
+ 1321               		.loc 1 295 0
+ 1322 0702 0895      		ret
+ 1323               	.LVL59:
+ 1324               	.L221:
+ 299:vec9_io.c     **** 		SREG=sreg;
+ 1325               		.loc 1 299 0
+ 1326 0704 2FBF      		out __SREG__,r18
+ 300:vec9_io.c     **** 		return(0);		// Should not happen.  If we call this when there are no bytes in the fifo, return 0
+ 1327               		.loc 1 300 0
+ 1328 0706 80E0      		ldi r24,0
+ 302:vec9_io.c     **** }
+ 1329               		.loc 1 302 0
+ 1330 0708 0895      		ret
+ 1331               		.cfi_endproc
+ 1332               	.LFE10:
+ 1335               	DoUpdateIo:
+ 1336               	.LFB23:
+ 917:vec9_io.c     **** {
+ 1337               		.loc 1 917 0
+ 1338               		.cfi_startproc
+ 1339 070a 0F93      		push r16
+ 1340               	.LCFI14:
+ 1341               		.cfi_def_cfa_offset 3
+ 1342               		.cfi_offset 16, -2
+ 1343 070c 1F93      		push r17
+ 1344               	.LCFI15:
+ 1345               		.cfi_def_cfa_offset 4
+ 1346               		.cfi_offset 17, -3
+ 1347 070e CF93      		push r28
+ 1348               	.LCFI16:
+ 1349               		.cfi_def_cfa_offset 5
+ 1350               		.cfi_offset 28, -4
+ 1351 0710 DF93      		push r29
+ 1352               	.LCFI17:
+ 1353               		.cfi_def_cfa_offset 6
+ 1354               		.cfi_offset 29, -5
+ 1355               	/* prologue: function */
+ 1356               	/* frame size = 0 */
+ 1357               	/* stack size = 4 */
+ 1358               	.L__stack_usage = 4
+ 920:vec9_io.c     **** 	if(newAdcResult[ADC_YOKE_PITCH]==true)
+ 1359               		.loc 1 920 0
+ 1360 0712 8091 0000 		lds r24,newAdcResult
+ 1361 0716 8130      		cpi r24,lo8(1)
+ 1362 0718 01F4      		brne .L225
+ 922:vec9_io.c     **** 		analogPitch=(unsigned char)(adcResults[ADC_YOKE_PITCH]/8);		// Get back to 8 bits
+ 1363               		.loc 1 922 0
+ 1364 071a 8091 0000 		lds r24,adcResults
+ 1365 071e 9091 0000 		lds r25,adcResults+1
+ 1366 0722 73E0      		ldi r23,3
+ 1367               		1:
+ 1368 0724 9695      		lsr r25
+ 1369 0726 8795      		ror r24
+ 1370 0728 7A95      		dec r23
+ 1371 072a 01F4      		brne 1b
+ 1372 072c 8093 0000 		sts analogPitch,r24
+ 1373               	.L225:
+ 924:vec9_io.c     **** 	if(newAdcResult[ADC_YOKE_ROLL]==true)
+ 1374               		.loc 1 924 0
+ 1375 0730 8091 0000 		lds r24,newAdcResult+1
+ 1376 0734 8130      		cpi r24,lo8(1)
+ 1377 0736 01F4      		brne .L226
+ 926:vec9_io.c     **** 		analogRoll=(unsigned char)(adcResults[ADC_YOKE_ROLL]/8);		// Get back to 8 bits
+ 1378               		.loc 1 926 0
+ 1379 0738 8091 0000 		lds r24,adcResults+2
+ 1380 073c 9091 0000 		lds r25,adcResults+2+1
+ 1381 0740 63E0      		ldi r22,3
+ 1382               		1:
+ 1383 0742 9695      		lsr r25
+ 1384 0744 8795      		ror r24
+ 1385 0746 6A95      		dec r22
+ 1386 0748 01F4      		brne 1b
+ 1387 074a 8093 0000 		sts analogRoll,r24
+ 1388               	.L226:
+ 1389               	.LVL60:
+ 1390               	.LBB24:
+ 1391               	.LBB25:
+ 841:vec9_io.c     **** 	if(CheckTimer(TIMER_INCOMING_MESSAGE_TIMEOUT))		// If we don't get a byte for some period of time,
+ 1392               		.loc 1 841 0
+ 1393 074e 84E0      		ldi r24,lo8(4)
+ 1394 0750 0E94 0000 		call CheckTimer
+ 1395               	.LVL61:
+ 1396 0754 8111      		cpse r24,__zero_reg__
+ 843:vec9_io.c     **** 		rxMessageState=0;
+ 1397               		.loc 1 843 0
+ 1398 0756 1092 0000 		sts rxMessageState.3882,__zero_reg__
+ 1399               	.L227:
+ 869:vec9_io.c     **** 				gotMessage=true;
+ 1400               		.loc 1 869 0
+ 1401 075a C0E0      		ldi r28,0
+ 860:vec9_io.c     **** 				rxMessageState=2;
+ 1402               		.loc 1 860 0
+ 1403 075c D2E0      		ldi r29,lo8(2)
+ 855:vec9_io.c     **** 					rxMessageState=1;
+ 1404               		.loc 1 855 0
+ 1405 075e 11E0      		ldi r17,lo8(1)
+ 864:vec9_io.c     **** 				rxMessageState=3;
+ 1406               		.loc 1 864 0
+ 1407 0760 03E0      		ldi r16,lo8(3)
+ 1408               	.LVL62:
+ 1409               	.L228:
+ 1410               	.LBB26:
+ 1411               	.LBB27:
+ 261:vec9_io.c     **** 	sreg=SREG;
+ 1412               		.loc 1 261 0
+ 1413 0762 9FB7      		in r25,__SREG__
+ 1414               	.LVL63:
+ 262:vec9_io.c     **** 	cli();
+ 1415               		.loc 1 262 0
+ 1416               	/* #APP */
+ 1417               	 ;  262 "vec9_io.c" 1
+ 1418 0764 F894      		cli
+ 1419               	 ;  0 "" 2
+ 1420               	.LVL64:
+ 265:vec9_io.c     **** 	if(bytesInRxFifo)	// Got anything in fifo?
+ 1421               		.loc 1 265 0
+ 1422               	/* #NOAPP */
+ 1423 0766 8091 0000 		lds r24,bytesInRxFifo
+ 1424               	.LVL65:
+ 270:vec9_io.c     **** 	SREG=sreg;
+ 1425               		.loc 1 270 0
+ 1426 076a 9FBF      		out __SREG__,r25
+ 1427               	.LBE27:
+ 1428               	.LBE26:
+ 846:vec9_io.c     **** 	while((RxFifoNotEmpty())&&(gotMessage==false))	// Loop here handling bytes we've gotten from the c
+ 1429               		.loc 1 846 0
+ 1430 076c 8823      		tst r24
+ 1431 076e 01F0      		breq .L234
+ 1432 0770 C111      		cpse r28,__zero_reg__
+ 1433 0772 00C0      		rjmp .L236
+ 848:vec9_io.c     **** 		SetTimer(TIMER_INCOMING_MESSAGE_TIMEOUT,INCOMING_MESSAGE_TIMEOUT);	// Got new bytes in the fifo, 
+ 1434               		.loc 1 848 0
+ 1435 0774 67E7      		ldi r22,lo8(119)
+ 1436 0776 71E0      		ldi r23,lo8(1)
+ 1437 0778 84E0      		ldi r24,lo8(4)
+ 1438               	.LVL66:
+ 1439 077a 0E94 0000 		call SetTimer
+ 1440               	.LVL67:
+ 849:vec9_io.c     **** 		byte=GetByteFromRxFifo();											// Inhale it
+ 1441               		.loc 1 849 0
+ 1442 077e 0E94 0000 		call GetByteFromRxFifo
+ 1443               	.LVL68:
+ 850:vec9_io.c     **** 		switch(rxMessageState)
+ 1444               		.loc 1 850 0
+ 1445 0782 9091 0000 		lds r25,rxMessageState.3882
+ 1446 0786 9130      		cpi r25,lo8(1)
+ 1447 0788 01F0      		breq .L230
+ 1448 078a 00F0      		brlo .L231
+ 1449 078c 9230      		cpi r25,lo8(2)
+ 1450 078e 01F0      		breq .L232
+ 1451 0790 9330      		cpi r25,lo8(3)
+ 1452 0792 01F4      		brne .L228
+ 867:vec9_io.c     **** 				outputByteLow=byte;
+ 1453               		.loc 1 867 0
+ 1454 0794 8093 0000 		sts outputByteLow,r24
+ 868:vec9_io.c     **** 				rxMessageState=0;
+ 1455               		.loc 1 868 0
+ 1456 0798 1092 0000 		sts rxMessageState.3882,__zero_reg__
+ 1457               	.LVL69:
+ 869:vec9_io.c     **** 				gotMessage=true;
+ 1458               		.loc 1 869 0
+ 1459 079c C1E0      		ldi r28,lo8(1)
+ 1460 079e 00C0      		rjmp .L228
+ 1461               	.LVL70:
+ 1462               	.L231:
+ 853:vec9_io.c     **** 				if(byte==0x42)			// Correct poll byte
+ 1463               		.loc 1 853 0
+ 1464 07a0 8234      		cpi r24,lo8(66)
+ 1465 07a2 01F4      		brne .L228
+ 855:vec9_io.c     **** 					rxMessageState=1;
+ 1466               		.loc 1 855 0
+ 1467 07a4 1093 0000 		sts rxMessageState.3882,r17
+ 1468 07a8 00C0      		rjmp .L228
+ 1469               	.L230:
+ 859:vec9_io.c     **** 				outputByteHigh=byte;
+ 1470               		.loc 1 859 0
+ 1471 07aa 8093 0000 		sts outputByteHigh,r24
+ 860:vec9_io.c     **** 				rxMessageState=2;
+ 1472               		.loc 1 860 0
+ 1473 07ae D093 0000 		sts rxMessageState.3882,r29
+ 1474 07b2 00C0      		rjmp .L228
+ 1475               	.L232:
+ 863:vec9_io.c     **** 				outputByteMiddle=byte;
+ 1476               		.loc 1 863 0
+ 1477 07b4 8093 0000 		sts outputByteMiddle,r24
+ 864:vec9_io.c     **** 				rxMessageState=3;
+ 1478               		.loc 1 864 0
+ 1479 07b8 0093 0000 		sts rxMessageState.3882,r16
+ 1480 07bc 00C0      		rjmp .L228
+ 1481               	.LVL71:
+ 1482               	.L234:
+ 874:vec9_io.c     **** 	if(gotMessage)
+ 1483               		.loc 1 874 0
+ 1484 07be CC23      		tst r28
+ 1485 07c0 01F0      		breq .L237
+ 1486               	.L236:
+ 876:vec9_io.c     **** 		SetOutputs();
+ 1487               		.loc 1 876 0
+ 1488 07c2 0E94 0000 		call SetOutputs
+ 1489               	.LVL72:
+ 880:vec9_io.c     **** 		if(txBytesToSend==0)				// Are we done sending the last message to the host?
+ 1490               		.loc 1 880 0
+ 1491 07c6 8091 0000 		lds r24,txBytesToSend
+ 1492 07ca 8111      		cpse r24,__zero_reg__
+ 1493 07cc 00C0      		rjmp .L237
+ 882:vec9_io.c     **** 			txBuffer[0]=0x41;
+ 1494               		.loc 1 882 0
+ 1495 07ce 81E4      		ldi r24,lo8(65)
+ 1496 07d0 8093 0000 		sts txBuffer,r24
+ 883:vec9_io.c     **** 			txBuffer[1]=(unsigned char)((keyState>>8)&0xFF);
+ 1497               		.loc 1 883 0
+ 1498 07d4 8091 0000 		lds r24,keyState
+ 1499 07d8 9091 0000 		lds r25,keyState+1
+ 1500 07dc 9093 0000 		sts txBuffer+1,r25
+ 884:vec9_io.c     **** 			txBuffer[2]=(unsigned char)(keyState&0xFF);
+ 1501               		.loc 1 884 0
+ 1502 07e0 8093 0000 		sts txBuffer+2,r24
+ 885:vec9_io.c     **** 			txBuffer[3]=0;
+ 1503               		.loc 1 885 0
+ 1504 07e4 1092 0000 		sts txBuffer+3,__zero_reg__
+ 886:vec9_io.c     **** 			txBuffer[4]=0;
+ 1505               		.loc 1 886 0
+ 1506 07e8 1092 0000 		sts txBuffer+4,__zero_reg__
+ 887:vec9_io.c     **** 			txBuffer[5]=analogRoll;
+ 1507               		.loc 1 887 0
+ 1508 07ec 8091 0000 		lds r24,analogRoll
+ 1509 07f0 8093 0000 		sts txBuffer+5,r24
+ 888:vec9_io.c     **** 			txBuffer[6]=analogPitch;
+ 1510               		.loc 1 888 0
+ 1511 07f4 8091 0000 		lds r24,analogPitch
+ 1512 07f8 8093 0000 		sts txBuffer+6,r24
+ 890:vec9_io.c     **** 			txBytesToSend=7;
+ 1513               		.loc 1 890 0
+ 1514 07fc 87E0      		ldi r24,lo8(7)
+ 1515 07fe 8093 0000 		sts txBytesToSend,r24
+ 891:vec9_io.c     **** 			txBufferIndex=0;
+ 1516               		.loc 1 891 0
+ 1517 0802 1092 0000 		sts txBufferIndex,__zero_reg__
+ 1518               	.L237:
+ 1519               	.LBE25:
+ 1520               	.LBE24:
+ 930:vec9_io.c     **** 	if(txBytesToSend)
+ 1521               		.loc 1 930 0
+ 1522 0806 8091 0000 		lds r24,txBytesToSend
+ 1523 080a 8823      		tst r24
+ 1524 080c 01F0      		breq .L224
+ 1525               	.LBB28:
+ 1526               	.LBB29:
+ 899:vec9_io.c     **** 	if(txBytesToSend)	// Anything to go out?
+ 1527               		.loc 1 899 0
+ 1528 080e 8091 0000 		lds r24,txBytesToSend
+ 1529 0812 8823      		tst r24
+ 1530 0814 01F0      		breq .L224
+ 901:vec9_io.c     **** 		if(UartTxBufferReady())		// Room in the Uart TX fifo?
+ 1531               		.loc 1 901 0
+ 1532 0816 0E94 0000 		call UartTxBufferReady
+ 1533               	.LVL73:
+ 1534 081a 8823      		tst r24
+ 1535 081c 01F0      		breq .L224
+ 903:vec9_io.c     **** 			UartSendByte(txBuffer[txBufferIndex++]);
+ 1536               		.loc 1 903 0
+ 1537 081e E091 0000 		lds r30,txBufferIndex
+ 1538 0822 81E0      		ldi r24,lo8(1)
+ 1539 0824 8E0F      		add r24,r30
+ 1540 0826 8093 0000 		sts txBufferIndex,r24
+ 1541 082a F0E0      		ldi r31,0
+ 1542 082c E050      		subi r30,lo8(-(txBuffer))
+ 1543 082e F040      		sbci r31,hi8(-(txBuffer))
+ 1544 0830 8081      		ld r24,Z
+ 1545 0832 0E94 0000 		call UartSendByte
+ 1546               	.LVL74:
+ 904:vec9_io.c     **** 			txBytesToSend--;
+ 1547               		.loc 1 904 0
+ 1548 0836 8091 0000 		lds r24,txBytesToSend
+ 1549 083a 8150      		subi r24,lo8(-(-1))
+ 1550 083c 8093 0000 		sts txBytesToSend,r24
+ 1551               	.L224:
+ 1552               	/* epilogue start */
+ 1553               	.LBE29:
+ 1554               	.LBE28:
+ 934:vec9_io.c     **** }
+ 1555               		.loc 1 934 0
+ 1556 0840 DF91      		pop r29
+ 1557 0842 CF91      		pop r28
+ 1558               	.LVL75:
+ 1559 0844 1F91      		pop r17
+ 1560 0846 0F91      		pop r16
+ 1561 0848 0895      		ret
+ 1562               		.cfi_endproc
+ 1563               	.LFE23:
+ 1565               	.global	__vector_64
+ 1567               	__vector_64:
+ 1568               	.LFB20:
+ 824:vec9_io.c     **** {
+ 1569               		.loc 1 824 0
+ 1570               		.cfi_startproc
+ 1571 084a 1F92      		push r1
+ 1572               	.LCFI18:
+ 1573               		.cfi_def_cfa_offset 3
+ 1574               		.cfi_offset 1, -2
+ 1575 084c 0F92      		push r0
+ 1576               	.LCFI19:
+ 1577               		.cfi_def_cfa_offset 4
+ 1578               		.cfi_offset 0, -3
+ 1579 084e 0FB6      		in r0,__SREG__
+ 1580 0850 0F92      		push r0
+ 1581 0852 1124      		clr __zero_reg__
+ 1582               	/* prologue: Signal */
+ 1583               	/* frame size = 0 */
+ 1584               	/* stack size = 3 */
+ 1585               	.L__stack_usage = 3
+ 1586               	/* epilogue start */
+ 825:vec9_io.c     **** }
+ 1587               		.loc 1 825 0
+ 1588 0854 0F90      		pop r0
+ 1589 0856 0FBE      		out __SREG__,r0
+ 1590 0858 0F90      		pop r0
+ 1591 085a 1F90      		pop r1
+ 1592 085c 1895      		reti
+ 1593               		.cfi_endproc
+ 1594               	.LFE20:
+ 1596               		.section	.rodata.str1.1,"aMS",@progbits,1
+ 1597               	.LC0:
+ 1598 0000 5365 7020 		.string	"Sep  8 2014"
+ 1598      2038 2032 
+ 1598      3031 3400 
+ 1599               	.LC1:
+ 1600 000c 0A49 206C 		.string	"\nI live! %s\n"
+ 1600      6976 6521 
+ 1600      2025 730A 
+ 1600      00
+ 1601               		.section	.text.startup,"ax",@progbits
+ 1602               	.global	main
+ 1604               	main:
+ 1605               	.LFB25:
+1278:vec9_io.c     **** 
+1279:vec9_io.c     **** //-----------------------------------------------------------------------
+1280:vec9_io.c     **** //-----------------------------------------------------------------------
+1281:vec9_io.c     **** // Program main loop:
+1282:vec9_io.c     **** //-----------------------------------------------------------------------
+1283:vec9_io.c     **** //-----------------------------------------------------------------------
+1284:vec9_io.c     **** 
+1285:vec9_io.c     **** int main(void)
+1286:vec9_io.c     **** // Application main loop.
+1287:vec9_io.c     **** {
+ 1606               		.loc 1 1287 0
+ 1607               		.cfi_startproc
+ 1608               	/* prologue: function */
+ 1609               	/* frame size = 0 */
+ 1610               	/* stack size = 0 */
+ 1611               	.L__stack_usage = 0
+1288:vec9_io.c     **** 	cli();			// No interrupts until we're ready.
+ 1612               		.loc 1 1288 0
+ 1613               	/* #APP */
+ 1614               	 ;  1288 "vec9_io.c" 1
+ 1615 0000 F894      		cli
+ 1616               	 ;  0 "" 2
+ 1617               	/* #NOAPP */
+ 1618               	.LBB48:
+ 1619               	.LBB49:
+ 596:vec9_io.c     **** 	PORTC.OUTCLR=0xE0;
+ 1620               		.loc 1 596 0
+ 1621 0002 80EE      		ldi r24,lo8(-32)
+ 1622 0004 8093 4606 		sts 1606,r24
+ 597:vec9_io.c     **** 	PORTC.DIRSET=0xE0;		
+ 1623               		.loc 1 597 0
+ 1624 0008 8093 4106 		sts 1601,r24
+ 599:vec9_io.c     **** 	PORTD.OUTCLR=0xFF;		
+ 1625               		.loc 1 599 0
+ 1626 000c 8FEF      		ldi r24,lo8(-1)
+ 1627 000e 8093 6606 		sts 1638,r24
+ 600:vec9_io.c     **** 	PORTD.DIRSET=0xFF;		
+ 1628               		.loc 1 600 0
+ 1629 0012 8093 6106 		sts 1633,r24
+ 602:vec9_io.c     **** 	PORTE.OUTCLR=0x03;		
+ 1630               		.loc 1 602 0
+ 1631 0016 83E0      		ldi r24,lo8(3)
+ 1632 0018 8093 8606 		sts 1670,r24
+ 603:vec9_io.c     **** 	PORTE.DIRSET=0x03;		
+ 1633               		.loc 1 603 0
+ 1634 001c 8093 8106 		sts 1665,r24
+ 605:vec9_io.c     **** 	PORTA.OUTCLR=0xF0;		
+ 1635               		.loc 1 605 0
+ 1636 0020 80EF      		ldi r24,lo8(-16)
+ 1637 0022 8093 0606 		sts 1542,r24
+ 606:vec9_io.c     **** 	PORTA.DIRSET=0xF0;		
+ 1638               		.loc 1 606 0
+ 1639 0026 8093 0106 		sts 1537,r24
+ 1640               	.LBB50:
+ 1641               	.LBB51:
+ 575:vec9_io.c     **** 	PORTA.OUTCLR=SER_CLK_MASK;		// Clock starts low
+ 1642               		.loc 1 575 0
+ 1643 002a 80E4      		ldi r24,lo8(64)
+ 1644 002c 8093 0606 		sts 1542,r24
+ 576:vec9_io.c     **** 	PORTA.OUTSET=SER_DATA_MASK;		// Inverted -- a set bit turns the LED off.
+ 1645               		.loc 1 576 0
+ 1646 0030 80E8      		ldi r24,lo8(-128)
+ 1647 0032 8093 0506 		sts 1541,r24
+ 577:vec9_io.c     **** 	MACRO_DoTenNops;
+ 1648               		.loc 1 577 0
+ 1649               	/* #APP */
+ 1650               	 ;  577 "vec9_io.c" 1
+ 1651 0036 0000      		nop
+ 1652               	 ;  0 "" 2
+ 1653               	 ;  577 "vec9_io.c" 1
+ 1654 0038 0000      		nop
+ 1655               	 ;  0 "" 2
+ 1656               	 ;  577 "vec9_io.c" 1
+ 1657 003a 0000      		nop
+ 1658               	 ;  0 "" 2
+ 1659               	 ;  577 "vec9_io.c" 1
+ 1660 003c 0000      		nop
+ 1661               	 ;  0 "" 2
+ 1662               	 ;  577 "vec9_io.c" 1
+ 1663 003e 0000      		nop
+ 1664               	 ;  0 "" 2
+ 1665               	 ;  577 "vec9_io.c" 1
+ 1666 0040 0000      		nop
+ 1667               	 ;  0 "" 2
+ 1668               	 ;  577 "vec9_io.c" 1
+ 1669 0042 0000      		nop
+ 1670               	 ;  0 "" 2
+ 1671               	 ;  577 "vec9_io.c" 1
+ 1672 0044 0000      		nop
+ 1673               	 ;  0 "" 2
+ 1674               	 ;  577 "vec9_io.c" 1
+ 1675 0046 0000      		nop
+ 1676               	 ;  0 "" 2
+ 1677               	 ;  577 "vec9_io.c" 1
+ 1678 0048 0000      		nop
+ 1679               	 ;  0 "" 2
+ 1680               	.LVL76:
+ 1681               	/* #NOAPP */
+ 1682 004a 84E1      		ldi r24,lo8(20)
+ 581:vec9_io.c     **** 		PORTA.OUTCLR=SER_CLK_MASK;		// Bring clock low
+ 1683               		.loc 1 581 0
+ 1684 004c 90E4      		ldi r25,lo8(64)
+ 583:vec9_io.c     **** 		PORTA.OUTSET=SER_DATA_MASK;		// Set data correctly
+ 1685               		.loc 1 583 0
+ 1686 004e 20E8      		ldi r18,lo8(-128)
+ 1687               	.LVL77:
+ 1688               	.L254:
+ 581:vec9_io.c     **** 		PORTA.OUTCLR=SER_CLK_MASK;		// Bring clock low
+ 1689               		.loc 1 581 0
+ 1690 0050 9093 0606 		sts 1542,r25
+ 582:vec9_io.c     **** 		MACRO_DoTenNops;				// Wait
+ 1691               		.loc 1 582 0
+ 1692               	/* #APP */
+ 1693               	 ;  582 "vec9_io.c" 1
+ 1694 0054 0000      		nop
+ 1695               	 ;  0 "" 2
+ 1696               	 ;  582 "vec9_io.c" 1
+ 1697 0056 0000      		nop
+ 1698               	 ;  0 "" 2
+ 1699               	 ;  582 "vec9_io.c" 1
+ 1700 0058 0000      		nop
+ 1701               	 ;  0 "" 2
+ 1702               	 ;  582 "vec9_io.c" 1
+ 1703 005a 0000      		nop
+ 1704               	 ;  0 "" 2
+ 1705               	 ;  582 "vec9_io.c" 1
+ 1706 005c 0000      		nop
+ 1707               	 ;  0 "" 2
+ 1708               	 ;  582 "vec9_io.c" 1
+ 1709 005e 0000      		nop
+ 1710               	 ;  0 "" 2
+ 1711               	 ;  582 "vec9_io.c" 1
+ 1712 0060 0000      		nop
+ 1713               	 ;  0 "" 2
+ 1714               	 ;  582 "vec9_io.c" 1
+ 1715 0062 0000      		nop
+ 1716               	 ;  0 "" 2
+ 1717               	 ;  582 "vec9_io.c" 1
+ 1718 0064 0000      		nop
+ 1719               	 ;  0 "" 2
+ 1720               	 ;  582 "vec9_io.c" 1
+ 1721 0066 0000      		nop
+ 1722               	 ;  0 "" 2
+ 583:vec9_io.c     **** 		PORTA.OUTSET=SER_DATA_MASK;		// Set data correctly
+ 1723               		.loc 1 583 0
+ 1724               	/* #NOAPP */
+ 1725 0068 2093 0506 		sts 1541,r18
+ 584:vec9_io.c     **** 		MACRO_DoTenNops;				// Wait
+ 1726               		.loc 1 584 0
+ 1727               	/* #APP */
+ 1728               	 ;  584 "vec9_io.c" 1
+ 1729 006c 0000      		nop
+ 1730               	 ;  0 "" 2
+ 1731               	 ;  584 "vec9_io.c" 1
+ 1732 006e 0000      		nop
+ 1733               	 ;  0 "" 2
+ 1734               	 ;  584 "vec9_io.c" 1
+ 1735 0070 0000      		nop
+ 1736               	 ;  0 "" 2
+ 1737               	 ;  584 "vec9_io.c" 1
+ 1738 0072 0000      		nop
+ 1739               	 ;  0 "" 2
+ 1740               	 ;  584 "vec9_io.c" 1
+ 1741 0074 0000      		nop
+ 1742               	 ;  0 "" 2
+ 1743               	 ;  584 "vec9_io.c" 1
+ 1744 0076 0000      		nop
+ 1745               	 ;  0 "" 2
+ 1746               	 ;  584 "vec9_io.c" 1
+ 1747 0078 0000      		nop
+ 1748               	 ;  0 "" 2
+ 1749               	 ;  584 "vec9_io.c" 1
+ 1750 007a 0000      		nop
+ 1751               	 ;  0 "" 2
+ 1752               	 ;  584 "vec9_io.c" 1
+ 1753 007c 0000      		nop
+ 1754               	 ;  0 "" 2
+ 1755               	 ;  584 "vec9_io.c" 1
+ 1756 007e 0000      		nop
+ 1757               	 ;  0 "" 2
+ 585:vec9_io.c     **** 		PORTA.OUTSET=SER_CLK_MASK;		// Bring clock high (latch in data)
+ 1758               		.loc 1 585 0
+ 1759               	/* #NOAPP */
+ 1760 0080 9093 0506 		sts 1541,r25
+ 586:vec9_io.c     **** 		MACRO_DoTenNops;				// Wait
+ 1761               		.loc 1 586 0
+ 1762               	/* #APP */
+ 1763               	 ;  586 "vec9_io.c" 1
+ 1764 0084 0000      		nop
+ 1765               	 ;  0 "" 2
+ 1766               	 ;  586 "vec9_io.c" 1
+ 1767 0086 0000      		nop
+ 1768               	 ;  0 "" 2
+ 1769               	 ;  586 "vec9_io.c" 1
+ 1770 0088 0000      		nop
+ 1771               	 ;  0 "" 2
+ 1772               	 ;  586 "vec9_io.c" 1
+ 1773 008a 0000      		nop
+ 1774               	 ;  0 "" 2
+ 1775               	 ;  586 "vec9_io.c" 1
+ 1776 008c 0000      		nop
+ 1777               	 ;  0 "" 2
+ 1778               	 ;  586 "vec9_io.c" 1
+ 1779 008e 0000      		nop
+ 1780               	 ;  0 "" 2
+ 1781               	 ;  586 "vec9_io.c" 1
+ 1782 0090 0000      		nop
+ 1783               	 ;  0 "" 2
+ 1784               	 ;  586 "vec9_io.c" 1
+ 1785 0092 0000      		nop
+ 1786               	 ;  0 "" 2
+ 1787               	 ;  586 "vec9_io.c" 1
+ 1788 0094 0000      		nop
+ 1789               	 ;  0 "" 2
+ 1790               	 ;  586 "vec9_io.c" 1
+ 1791 0096 0000      		nop
+ 1792               	 ;  0 "" 2
+ 1793               	.LVL78:
+ 1794               	/* #NOAPP */
+ 1795 0098 8150      		subi r24,lo8(-(-1))
+ 1796               	.LVL79:
+ 579:vec9_io.c     **** 	for(i=0;i<20;i++)
+ 1797               		.loc 1 579 0
+ 1798 009a 01F0      		breq .+2
+ 1799 009c 00C0      		rjmp .L254
+ 589:vec9_io.c     **** 	PORTA.OUTCLR=SER_CLK_MASK;		// Clock ends low
+ 1800               		.loc 1 589 0
+ 1801 009e 80E4      		ldi r24,lo8(64)
+ 1802               	.LVL80:
+ 1803 00a0 8093 0606 		sts 1542,r24
+ 590:vec9_io.c     **** 	PORTA.OUTSET=SER_DATA_MASK;		// Data ends high
+ 1804               		.loc 1 590 0
+ 1805 00a4 80E8      		ldi r24,lo8(-128)
+ 1806 00a6 8093 0506 		sts 1541,r24
+ 1807               	.LBE51:
+ 1808               	.LBE50:
+ 1809               	.LBE49:
+ 1810               	.LBE48:
+1289:vec9_io.c     **** 
+1290:vec9_io.c     **** 	InitOutputs();			// Turn off all outputs
+1291:vec9_io.c     **** 	
+1292:vec9_io.c     **** 	// Xmega parts start running an internal clock at 2MHZ -- we change that in software.
+1293:vec9_io.c     **** 	// This board has a 20MHz silicon oscillator hooked up to the MCU which we use as the CPU clock
+1294:vec9_io.c     **** 
+1295:vec9_io.c     **** 	OSC.XOSCCTRL=OSC_XOSCSEL_EXTCLK_gc;				// No crystal oscillator, set up for external clock in (thi
+ 1811               		.loc 1 1295 0
+ 1812 00aa 1092 5200 		sts 82,__zero_reg__
+1296:vec9_io.c     **** 	OSC.PLLCTRL=(0b00<<OSC_PLLSRC_gp)|(0<<OSC_PLLFAC_gp);	// no PLL
+ 1813               		.loc 1 1296 0
+ 1814 00ae 1092 5500 		sts 85,__zero_reg__
+1297:vec9_io.c     **** 	OSC.DFLLCTRL=0;						// no calibration
+ 1815               		.loc 1 1297 0
+ 1816 00b2 1092 5600 		sts 86,__zero_reg__
+1298:vec9_io.c     **** 	OSC.XOSCFAIL=0;						// no failure monitoring
+ 1817               		.loc 1 1298 0
+ 1818 00b6 1092 5300 		sts 83,__zero_reg__
+1299:vec9_io.c     **** 
+1300:vec9_io.c     **** 	OSC.CTRL=(0<<OSC_PLLEN_bp)|(1<<OSC_XOSCEN_bp)|(0<<OSC_RC32KEN_bp)|(0<<OSC_RC32MEN_bp)|(1<<OSC_RC2M
+ 1819               		.loc 1 1300 0
+ 1820 00ba 89E0      		ldi r24,lo8(9)
+ 1821 00bc 8093 5000 		sts 80,r24
+ 1822               	.L256:
+1301:vec9_io.c     **** 
+1302:vec9_io.c     **** 	while(!(OSC.STATUS&(1<<OSC_XOSCRDY_bp)))		// sit here until external clock is alive
+ 1823               		.loc 1 1302 0 discriminator 1
+ 1824 00c0 8091 5100 		lds r24,81
+ 1825 00c4 83FF      		sbrs r24,3
+ 1826 00c6 00C0      		rjmp .L256
+1303:vec9_io.c     **** 		;
+1304:vec9_io.c     **** 
+1305:vec9_io.c     **** 	CCPWrite(&CLK.PSCTRL,0);						//	No prescaling
+ 1827               		.loc 1 1305 0
+ 1828 00c8 60E0      		ldi r22,0
+ 1829 00ca 81E4      		ldi r24,lo8(65)
+ 1830 00cc 90E0      		ldi r25,0
+ 1831 00ce 0E94 0000 		call CCPWrite
+ 1832               	.LVL81:
+1306:vec9_io.c     **** 	CCPWrite(&CLK.CTRL,CLK_SCLKSEL_XOSC_gc);		//	Set ext oscillator as the clock source
+ 1833               		.loc 1 1306 0
+ 1834 00d2 63E0      		ldi r22,lo8(3)
+ 1835 00d4 80E4      		ldi r24,lo8(64)
+ 1836 00d6 90E0      		ldi r25,0
+ 1837 00d8 0E94 0000 		call CCPWrite
+ 1838               	.LVL82:
+1307:vec9_io.c     **** 	CLK.RTCCTRL=CLK_RTCSRC_RCOSC_gc|0;				// select internal 32.748KHz RC, but leave it disabled
+ 1839               		.loc 1 1307 0
+ 1840 00dc 84E0      		ldi r24,lo8(4)
+ 1841 00de 8093 4300 		sts 67,r24
+1308:vec9_io.c     **** 
+1309:vec9_io.c     **** 	CCPWrite(&OSC.XOSCFAIL,OSC_XOSCFDEN_bm);		//  Enable failure detection on internal oscillator (res
+ 1842               		.loc 1 1309 0
+ 1843 00e2 61E0      		ldi r22,lo8(1)
+ 1844 00e4 83E5      		ldi r24,lo8(83)
+ 1845 00e6 90E0      		ldi r25,0
+ 1846 00e8 0E94 0000 		call CCPWrite
+ 1847               	.LVL83:
+1310:vec9_io.c     **** 	OSC.CTRL&=~(1<<OSC_RC2MEN_bp);					// turn off 2MHz clock now that we're running from the PLL/exte
+ 1848               		.loc 1 1310 0
+ 1849 00ec 8091 5000 		lds r24,80
+ 1850 00f0 8E7F      		andi r24,lo8(-2)
+ 1851 00f2 8093 5000 		sts 80,r24
+1311:vec9_io.c     **** 
+1312:vec9_io.c     **** 	// Ports and INIT
+1313:vec9_io.c     **** 
+1314:vec9_io.c     **** //	PR.PRGEN=0x1F;									// Power off AES, EBI, RTC, event system, and DMA
+1315:vec9_io.c     **** //  @@@ power off that stuff once you're sure you aren't using it.
+1316:vec9_io.c     **** //  Power off the port peripherals too.
+1317:vec9_io.c     **** 
+1318:vec9_io.c     **** 	CCPWrite(&MCU.MCUCR,MCU_JTAGD_bm);				//  Disable JTAG (screws up PORTB)
+ 1852               		.loc 1 1318 0
+ 1853 00f6 61E0      		ldi r22,lo8(1)
+ 1854 00f8 86E9      		ldi r24,lo8(-106)
+ 1855 00fa 90E0      		ldi r25,0
+ 1856 00fc 0E94 0000 		call CCPWrite
+ 1857               	.LVL84:
+1319:vec9_io.c     **** 
+1320:vec9_io.c     **** 	InitUart();
+ 1858               		.loc 1 1320 0
+ 1859 0100 0E94 0000 		call InitUart
+ 1860               	.LVL85:
+ 1861               	.LBB52:
+ 1862               	.LBB53:
+ 309:vec9_io.c     **** 	sreg=SREG;
+ 1863               		.loc 1 309 0
+ 1864 0104 8FB7      		in r24,__SREG__
+ 1865               	.LVL86:
+ 310:vec9_io.c     **** 	cli();
+ 1866               		.loc 1 310 0
+ 1867               	/* #APP */
+ 1868               	 ;  310 "vec9_io.c" 1
+ 1869 0106 F894      		cli
+ 1870               	 ;  0 "" 2
+ 312:vec9_io.c     **** 	bytesInRxFifo=0;					// Init ring buffer for RS485 byte reception
+ 1871               		.loc 1 312 0
+ 1872               	/* #NOAPP */
+ 1873 0108 1092 0000 		sts bytesInRxFifo,__zero_reg__
+ 313:vec9_io.c     **** 	fifoWritePointer=0;
+ 1874               		.loc 1 313 0
+ 1875 010c 1092 0000 		sts fifoWritePointer,__zero_reg__
+ 314:vec9_io.c     **** 	fifoReadPointer=0;
+ 1876               		.loc 1 314 0
+ 1877 0110 1092 0000 		sts fifoReadPointer,__zero_reg__
+ 315:vec9_io.c     **** 	txBufferIndex=0;
+ 1878               		.loc 1 315 0
+ 1879 0114 1092 0000 		sts txBufferIndex,__zero_reg__
+ 316:vec9_io.c     **** 	txBytesToSend=0;
+ 1880               		.loc 1 316 0
+ 1881 0118 1092 0000 		sts txBytesToSend,__zero_reg__
+ 317:vec9_io.c     **** 	SERIAL_USART.CTRLA=USART_RXCINTLVL_MED_gc;	// Interrupts enabled, medium priority
+ 1882               		.loc 1 317 0
+ 1883 011c 90E2      		ldi r25,lo8(32)
+ 1884 011e 9093 A30B 		sts 2979,r25
+ 319:vec9_io.c     **** 	SREG=sreg;
+ 1885               		.loc 1 319 0
+ 1886 0122 8FBF      		out __SREG__,r24
+ 1887               	.LBE53:
+ 1888               	.LBE52:
+ 1889               	.LBB54:
+ 1890               	.LBB55:
+ 448:vec9_io.c     **** 	PR.PRPA&=~PR_ADC_bm;									// Make sure ADC is on
+ 1891               		.loc 1 448 0
+ 1892 0124 8091 7100 		lds r24,113
+ 1893               	.LVL87:
+ 1894 0128 8D7F      		andi r24,lo8(-3)
+ 1895 012a 8093 7100 		sts 113,r24
+ 1896               	.LVL88:
+ 449:vec9_io.c     **** 	PORTA.DIRCLR=0x0F;										// PORTA analog inputs to inputs
+ 1897               		.loc 1 449 0
+ 1898 012e 8FE0      		ldi r24,lo8(15)
+ 1899 0130 8093 0206 		sts 1538,r24
+ 452:vec9_io.c     **** 	ADCA.CTRLB=0x10;										// Same as above, no "convmode" bitmask
+ 1900               		.loc 1 452 0
+ 1901 0134 80E1      		ldi r24,lo8(16)
+ 1902 0136 8093 0102 		sts 513,r24
+ 453:vec9_io.c     **** 	ADCA.REFCTRL=ADC_REFSEL_AREFA_gc;						// External reference A, bandgap and temp disabled
+ 1903               		.loc 1 453 0
+ 1904 013a 9093 0202 		sts 514,r25
+ 456:vec9_io.c     **** 	ADCA.PRESCALER=ADC_PRESCALER_DIV512_gc;					// See notes	-- real slow for high impedance
+ 1905               		.loc 1 456 0
+ 1906 013e 17E0      		ldi r17,lo8(7)
+ 1907 0140 1093 0402 		sts 516,r17
+ 458:vec9_io.c     **** 	ADCA.CH0.CTRL=ADC_CH_INPUTMODE_DIFF_gc;							// Differential input, no gain.
+ 1908               		.loc 1 458 0
+ 1909 0144 82E0      		ldi r24,lo8(2)
+ 1910 0146 8093 2002 		sts 544,r24
+ 459:vec9_io.c     **** 	ADCA.CH0.MUXCTRL=ADC_CH_MUXPOS_PIN2_gc|ADC_CH_MUXNEG_PIN3_gc;	// Positive input is PIN2 (PA2), Neg
+ 1911               		.loc 1 459 0
+ 1912 014a 83E1      		ldi r24,lo8(19)
+ 1913 014c 8093 2102 		sts 545,r24
+ 460:vec9_io.c     **** 	ADCA.CH0.INTCTRL=0;												// No interrupts
+ 1914               		.loc 1 460 0
+ 1915 0150 1092 2202 		sts 546,__zero_reg__
+ 462:vec9_io.c     **** 	ADCA.CTRLA=ADC_ENABLE_bm;								// Enable the ADC
+ 1916               		.loc 1 462 0
+ 1917 0154 C1E0      		ldi r28,lo8(1)
+ 1918 0156 C093 0002 		sts 512,r28
+ 466:vec9_io.c     **** 	adcResultTemp=0;	// Zero our accumulator
+ 1919               		.loc 1 466 0
+ 1920 015a 1092 0000 		sts adcResultTemp,__zero_reg__
+ 1921 015e 1092 0000 		sts adcResultTemp+1,__zero_reg__
+ 1922 0162 1092 0000 		sts adcResultTemp+2,__zero_reg__
+ 1923 0166 1092 0000 		sts adcResultTemp+3,__zero_reg__
+ 467:vec9_io.c     **** 	adcSampleCount=0;	// Zero oversample/average counter
+ 1924               		.loc 1 467 0
+ 1925 016a 1092 0000 		sts adcSampleCount,__zero_reg__
+ 1926               	.LVL89:
+ 471:vec9_io.c     **** 		adcResults[i]=0;
+ 1927               		.loc 1 471 0
+ 1928 016e 1092 0000 		sts adcResults,__zero_reg__
+ 1929 0172 1092 0000 		sts adcResults+1,__zero_reg__
+ 472:vec9_io.c     **** 		newAdcResult[i]=false;
+ 1930               		.loc 1 472 0
+ 1931 0176 1092 0000 		sts newAdcResult,__zero_reg__
+ 1932               	.LVL90:
+ 471:vec9_io.c     **** 		adcResults[i]=0;
+ 1933               		.loc 1 471 0
+ 1934 017a 1092 0000 		sts adcResults+2,__zero_reg__
+ 1935 017e 1092 0000 		sts adcResults+2+1,__zero_reg__
+ 472:vec9_io.c     **** 		newAdcResult[i]=false;
+ 1936               		.loc 1 472 0
+ 1937 0182 1092 0000 		sts newAdcResult+1,__zero_reg__
+ 1938               	.LVL91:
+ 475:vec9_io.c     **** 	currentAdcSource=0;	// Look at the first signal source
+ 1939               		.loc 1 475 0
+ 1940 0186 1092 0000 		sts currentAdcSource,__zero_reg__
+ 477:vec9_io.c     **** 	ADCA.CH0.CTRL|=ADC_CH_START_bm; 	// Start conversion on channel 0
+ 1941               		.loc 1 477 0
+ 1942 018a 8091 2002 		lds r24,544
+ 1943 018e 8068      		ori r24,lo8(-128)
+ 1944 0190 8093 2002 		sts 544,r24
+ 1945               	.LBE55:
+ 1946               	.LBE54:
+ 1947               	.LBB56:
+ 1948               	.LBB57:
+ 341:vec9_io.c     **** 	PORTB.DIRCLR=0xFF;									// All bits
+ 1949               		.loc 1 341 0
+ 1950 0194 DFEF      		ldi r29,lo8(-1)
+ 1951 0196 D093 2206 		sts 1570,r29
+ 342:vec9_io.c     **** 	PORTCFG.MPCMASK=0xFF;								// Configure these pins on this port next time we write the config re
+ 1952               		.loc 1 342 0
+ 1953 019a D093 B000 		sts 176,r29
+ 343:vec9_io.c     **** 	PORTB.PIN0CTRL=PORT_INVEN_bm|PORT_OPC_PULLUP_gc;	// Set them to be pulled up and inverted
+ 1954               		.loc 1 343 0
+ 1955 019e 88E5      		ldi r24,lo8(88)
+ 1956 01a0 8093 3006 		sts 1584,r24
+ 345:vec9_io.c     **** 	PORTC.DIRCLR=0x1F;									// Bottom five bits
+ 1957               		.loc 1 345 0
+ 1958 01a4 9FE1      		ldi r25,lo8(31)
+ 1959 01a6 9093 4206 		sts 1602,r25
+ 347:vec9_io.c     **** 	PORTC.PIN0CTRL=PORT_INVEN_bm|PORT_OPC_PULLUP_gc;	// Set them to be pulled up and inverted
+ 1960               		.loc 1 347 0
+ 1961 01aa 8093 5006 		sts 1616,r24
+ 348:vec9_io.c     **** 	PORTC.PIN1CTRL=PORT_INVEN_bm|PORT_OPC_PULLUP_gc;	// Set them to be pulled up and inverted
+ 1962               		.loc 1 348 0
+ 1963 01ae 8093 5106 		sts 1617,r24
+ 349:vec9_io.c     **** 	PORTC.PIN2CTRL=PORT_OPC_PULLUP_gc;					// Set them to be pulled up
+ 1964               		.loc 1 349 0
+ 1965 01b2 98E1      		ldi r25,lo8(24)
+ 1966 01b4 9093 5206 		sts 1618,r25
+ 350:vec9_io.c     **** 	PORTC.PIN3CTRL=PORT_OPC_PULLUP_gc;					// Set them to be pulled up
+ 1967               		.loc 1 350 0
+ 1968 01b8 9093 5306 		sts 1619,r25
+ 351:vec9_io.c     **** 	PORTC.PIN4CTRL=PORT_INVEN_bm|PORT_OPC_PULLUP_gc;	// Set them to be pulled up and inverted
+ 1969               		.loc 1 351 0
+ 1970 01bc 8093 5406 		sts 1620,r24
+ 353:vec9_io.c     **** 	PORTE.DIRCLR=(1<<2);								// PE2 to input
+ 1971               		.loc 1 353 0
+ 1972 01c0 94E0      		ldi r25,lo8(4)
+ 1973 01c2 9093 8206 		sts 1666,r25
+ 354:vec9_io.c     **** 	PORTE.PIN2CTRL=PORT_INVEN_bm|PORT_OPC_PULLUP_gc;	// Set to be pulled up and inverted
+ 1974               		.loc 1 354 0
+ 1975 01c6 8093 9206 		sts 1682,r24
+ 356:vec9_io.c     **** 	keyState=0;		// No keys pressed
+ 1976               		.loc 1 356 0
+ 1977 01ca 1092 0000 		sts keyState,__zero_reg__
+ 1978 01ce 1092 0000 		sts keyState+1,__zero_reg__
+ 357:vec9_io.c     **** 	newKeys=0;		// No keys new
+ 1979               		.loc 1 357 0
+ 1980 01d2 1092 0000 		sts newKeys,__zero_reg__
+ 1981 01d6 1092 0000 		sts newKeys+1,__zero_reg__
+ 359:vec9_io.c     **** 	SetTimer(TIMER_DEBOUNCE,(SECOND/64));
+ 1982               		.loc 1 359 0
+ 1983 01da 6EE2      		ldi r22,lo8(46)
+ 1984 01dc 70E0      		ldi r23,0
+ 1985 01de 83E0      		ldi r24,lo8(3)
+ 1986 01e0 0E94 0000 		call SetTimer
+ 1987               	.LVL92:
+ 1988               	.LBE57:
+ 1989               	.LBE56:
+ 1990               	.LBB58:
+ 1991               	.LBB59:
+ 128:vec9_io.c     **** 	systemTicks=0;
+ 1992               		.loc 1 128 0
+ 1993 01e4 1092 0000 		sts systemTicks,__zero_reg__
+ 1994 01e8 1092 0000 		sts systemTicks+1,__zero_reg__
+ 130:vec9_io.c     **** 	PR.PRPE&=~PR_TC0_bm;		// Turn on timer counter zero for porte
+ 1995               		.loc 1 130 0
+ 1996 01ec 8091 7500 		lds r24,117
+ 1997 01f0 8E7F      		andi r24,lo8(-2)
+ 1998 01f2 8093 7500 		sts 117,r24
+ 132:vec9_io.c     **** 	TCE0.CCA=0;						// Compare match 0
+ 1999               		.loc 1 132 0
+ 2000 01f6 1092 280A 		sts 2600,__zero_reg__
+ 2001 01fa 1092 290A 		sts 2600+1,__zero_reg__
+ 133:vec9_io.c     **** 	TCE0.CNT=0;						// Set Count Value to 0.
+ 2002               		.loc 1 133 0
+ 2003 01fe 1092 200A 		sts 2592,__zero_reg__
+ 2004 0202 1092 210A 		sts 2592+1,__zero_reg__
+ 134:vec9_io.c     **** 	TCE0.PER=(F_CPU/SECOND);		// Set period for this timer (max count)
+ 2005               		.loc 1 134 0
+ 2006 0206 8AE0      		ldi r24,lo8(10)
+ 2007 0208 9AE1      		ldi r25,lo8(26)
+ 2008 020a 8093 260A 		sts 2598,r24
+ 2009 020e 9093 270A 		sts 2598+1,r25
+ 136:vec9_io.c     **** 	TCE0.CTRLB=0;					// No compares/captures enabled, and no waveforms
+ 2010               		.loc 1 136 0
+ 2011 0212 1092 010A 		sts 2561,__zero_reg__
+ 138:vec9_io.c     **** 	TCE0.INTFLAGS=0xFF;						// Clear the interrupt flags
+ 2012               		.loc 1 138 0
+ 2013 0216 D093 0C0A 		sts 2572,r29
+ 140:vec9_io.c     **** 	TCE0.INTCTRLA=TC_OVFINTLVL_LO_gc;		// Set wdt overflow interrupt (low priority)
+ 2014               		.loc 1 140 0
+ 2015 021a C093 060A 		sts 2566,r28
+ 141:vec9_io.c     **** 	TCE0.INTCTRLB=0;						// No CC ints
+ 2016               		.loc 1 141 0
+ 2017 021e 1092 070A 		sts 2567,__zero_reg__
+ 142:vec9_io.c     **** 	TCE0.CTRLA=TC_CLKSEL_DIV1_gc;			// Start the timer with a clock division of 1.
+ 2018               		.loc 1 142 0
+ 2019 0222 C093 000A 		sts 2560,r28
+ 2020               	.LBE59:
+ 2021               	.LBE58:
+1321:vec9_io.c     **** 	InitSerialFifos();
+1322:vec9_io.c     **** //	InitSpi();
+1323:vec9_io.c     **** 	InitAdc();
+1324:vec9_io.c     **** 	InitSwitches();
+1325:vec9_io.c     **** 	InitSoftclock();
+1326:vec9_io.c     **** 	fdevopen(UartPutChar, NULL);	// Associate stdout with out putchar routine (enable printf)  --- Thi
+ 2022               		.loc 1 1326 0
+ 2023 0226 60E0      		ldi r22,0
+ 2024 0228 70E0      		ldi r23,0
+ 2025 022a 80E0      		ldi r24,lo8(gs(UartPutChar))
+ 2026 022c 90E0      		ldi r25,hi8(gs(UartPutChar))
+ 2027 022e 0E94 0000 		call fdevopen
+ 2028               	.LVL93:
+1327:vec9_io.c     **** 
+1328:vec9_io.c     **** 	PMIC.CTRL=PMIC_HILVLEN_bm|PMIC_MEDLVLEN_bm|PMIC_LOLVLEN_bm;		// Enable all interrupt levels
+ 2029               		.loc 1 1328 0
+ 2030 0232 1093 A200 		sts 162,r17
+1329:vec9_io.c     **** 	sei();															// Global interrupt enable
+ 2031               		.loc 1 1329 0
+ 2032               	/* #APP */
+ 2033               	 ;  1329 "vec9_io.c" 1
+ 2034 0236 7894      		sei
+ 2035               	 ;  0 "" 2
+1330:vec9_io.c     **** 
+1331:vec9_io.c     **** 	RST.STATUS=0x3F;				// Clear reset cause flags	
+ 2036               		.loc 1 1331 0
+ 2037               	/* #NOAPP */
+ 2038 0238 8FE3      		ldi r24,lo8(63)
+ 2039 023a 8093 7800 		sts 120,r24
+1332:vec9_io.c     **** 	
+1333:vec9_io.c     **** 	printf("\nI live! %s\n",BUILD_DATE);
+ 2040               		.loc 1 1333 0
+ 2041 023e 80E0      		ldi r24,lo8(.LC0)
+ 2042 0240 90E0      		ldi r25,hi8(.LC0)
+ 2043 0242 9F93      		push r25
+ 2044               	.LCFI20:
+ 2045               		.cfi_def_cfa_offset 3
+ 2046 0244 8F93      		push r24
+ 2047               	.LCFI21:
+ 2048               		.cfi_def_cfa_offset 4
+ 2049 0246 80E0      		ldi r24,lo8(.LC1)
+ 2050 0248 90E0      		ldi r25,hi8(.LC1)
+ 2051 024a 9F93      		push r25
+ 2052               	.LCFI22:
+ 2053               		.cfi_def_cfa_offset 5
+ 2054 024c 8F93      		push r24
+ 2055               	.LCFI23:
+ 2056               		.cfi_def_cfa_offset 6
+ 2057 024e 0E94 0000 		call printf
+ 2058               	.LVL94:
+ 2059               	.LBB60:
+ 2060               	.LBB61:
+  97:vec9_io.c     **** 	State=newState;
+ 2061               		.loc 1 97 0
+ 2062 0252 80E0      		ldi r24,lo8(gs(DoStartupTest))
+ 2063 0254 90E0      		ldi r25,hi8(gs(DoStartupTest))
+ 2064 0256 8093 0000 		sts State,r24
+ 2065 025a 9093 0000 		sts State+1,r25
+  98:vec9_io.c     **** 	subState=SS_0;
+ 2066               		.loc 1 98 0
+ 2067 025e 1092 0000 		sts subState,__zero_reg__
+ 2068 0262 0F90      		pop __tmp_reg__
+ 2069 0264 0F90      		pop __tmp_reg__
+ 2070 0266 0F90      		pop __tmp_reg__
+ 2071 0268 0F90      		pop __tmp_reg__
+ 2072               	.LCFI24:
+ 2073               		.cfi_def_cfa_offset 2
+ 2074               	.LBE61:
+ 2075               	.LBE60:
+ 2076               	.LBB62:
+ 2077               	.LBB63:
+ 518:vec9_io.c     **** 				newAdcResult[currentAdcSource]=true;								// Let program know we have a new ADC reading
+ 2078               		.loc 1 518 0
+ 2079 026a D1E0      		ldi r29,lo8(1)
+ 521:vec9_io.c     **** 				tossCounter=SAMPLES_TO_TOSS;			// Ignore initial samples after switching the mux
+ 2080               		.loc 1 521 0
+ 2081 026c 14E0      		ldi r17,lo8(4)
+ 533:vec9_io.c     **** 					ADCA.CH0.CTRL=ADC_CH_INPUTMODE_DIFF_gc;							// Differential input, no gain.
+ 2082               		.loc 1 533 0
+ 2083 026e C2E0      		ldi r28,lo8(2)
+ 534:vec9_io.c     **** 					ADCA.CH0.MUXCTRL=ADC_CH_MUXPOS_PIN2_gc|ADC_CH_MUXNEG_PIN3_gc;	// Positive input is PIN2 (PA2),
+ 2084               		.loc 1 534 0
+ 2085 0270 03E1      		ldi r16,lo8(19)
+ 539:vec9_io.c     **** 					ADCA.CH0.MUXCTRL=ADC_CH_MUXPOS_PIN1_gc|ADC_CH_MUXNEG_PIN3_gc;	// Positive input is PIN1 (PA1),
+ 2086               		.loc 1 539 0
+ 2087 0272 7BE0      		ldi r23,lo8(11)
+ 2088 0274 F72E      		mov r15,r23
+ 2089               	.L267:
+ 2090               	.LVL95:
+ 494:vec9_io.c     **** 		newAdcResult[i]=false;
+ 2091               		.loc 1 494 0 discriminator 1
+ 2092 0276 1092 0000 		sts newAdcResult,__zero_reg__
+ 2093               	.LVL96:
+ 2094 027a 1092 0000 		sts newAdcResult+1,__zero_reg__
+ 2095               	.LVL97:
+ 497:vec9_io.c     **** 	if(ADCA.CH0.INTFLAGS&ADC_CH0IF_bm)	// Got a complete conversion on CH0?
+ 2096               		.loc 1 497 0 discriminator 1
+ 2097 027e 8091 2302 		lds r24,547
+ 2098 0282 80FF      		sbrs r24,0
+ 2099 0284 00C0      		rjmp .L257
+ 499:vec9_io.c     **** 		temp=ADCA.CH0RES;			// Get result
+ 2100               		.loc 1 499 0
+ 2101 0286 8091 1002 		lds r24,528
+ 2102 028a 9091 1102 		lds r25,528+1
+ 2103               	.LVL98:
+ 501:vec9_io.c     **** 		if(tossCounter)				// Throw out a couple results while we let mux settle (may not be necessary, b
+ 2104               		.loc 1 501 0
+ 2105 028e 2091 0000 		lds r18,tossCounter.3839
+ 2106 0292 2223      		tst r18
+ 2107 0294 01F0      		breq .L258
+ 503:vec9_io.c     **** 			tossCounter--;
+ 2108               		.loc 1 503 0
+ 2109 0296 2150      		subi r18,lo8(-(-1))
+ 2110 0298 2093 0000 		sts tossCounter.3839,r18
+ 2111 029c 00C0      		rjmp .L257
+ 2112               	.L258:
+ 2113               	.LVL99:
+ 2114 029e 97FF      		sbrs r25,7
+ 2115 02a0 00C0      		rjmp .L259
+ 2116 02a2 80E0      		ldi r24,0
+ 2117 02a4 90E0      		ldi r25,0
+ 2118               	.LVL100:
+ 2119               	.L259:
+ 512:vec9_io.c     **** 			adcResultTemp+=temp;		// Add to accumulator
+ 2120               		.loc 1 512 0
+ 2121 02a6 AA27      		clr r26
+ 2122 02a8 97FD      		sbrc r25,7
+ 2123 02aa A095      		com r26
+ 2124 02ac BA2F      		mov r27,r26
+ 2125 02ae 4091 0000 		lds r20,adcResultTemp
+ 2126 02b2 5091 0000 		lds r21,adcResultTemp+1
+ 2127 02b6 6091 0000 		lds r22,adcResultTemp+2
+ 2128 02ba 7091 0000 		lds r23,adcResultTemp+3
+ 2129 02be 840F      		add r24,r20
+ 2130 02c0 951F      		adc r25,r21
+ 2131 02c2 A61F      		adc r26,r22
+ 2132 02c4 B71F      		adc r27,r23
+ 2133 02c6 8093 0000 		sts adcResultTemp,r24
+ 2134 02ca 9093 0000 		sts adcResultTemp+1,r25
+ 2135 02ce A093 0000 		sts adcResultTemp+2,r26
+ 2136 02d2 B093 0000 		sts adcResultTemp+3,r27
+ 513:vec9_io.c     **** 			adcSampleCount++;			// One more sample gathered
+ 2137               		.loc 1 513 0
+ 2138 02d6 2091 0000 		lds r18,adcSampleCount
+ 2139 02da 2F5F      		subi r18,lo8(-(1))
+ 2140 02dc 2093 0000 		sts adcSampleCount,r18
+ 515:vec9_io.c     **** 			if(adcSampleCount>=SAMPLES_TO_ADD)	// Got enough samples?
+ 2141               		.loc 1 515 0
+ 2142 02e0 2830      		cpi r18,lo8(8)
+ 2143 02e2 00F0      		brlo .L260
+ 517:vec9_io.c     **** 				adcResults[currentAdcSource]=(adcResultTemp/SAMPLES_TO_AVERAGE);	// export reading, with averag
+ 2144               		.loc 1 517 0
+ 2145 02e4 4091 0000 		lds r20,currentAdcSource
+ 2146 02e8 242F      		mov r18,r20
+ 2147 02ea 30E0      		ldi r19,0
+ 2148 02ec F901      		movw r30,r18
+ 2149 02ee EE0F      		lsl r30
+ 2150 02f0 FF1F      		rol r31
+ 2151 02f2 E050      		subi r30,lo8(-(adcResults))
+ 2152 02f4 F040      		sbci r31,hi8(-(adcResults))
+ 2153 02f6 63E0      		ldi r22,3
+ 2154               		1:
+ 2155 02f8 B695      		lsr r27
+ 2156 02fa A795      		ror r26
+ 2157 02fc 9795      		ror r25
+ 2158 02fe 8795      		ror r24
+ 2159 0300 6A95      		dec r22
+ 2160 0302 01F4      		brne 1b
+ 2161 0304 8083      		st Z,r24
+ 2162 0306 9183      		std Z+1,r25
+ 518:vec9_io.c     **** 				newAdcResult[currentAdcSource]=true;								// Let program know we have a new ADC reading
+ 2163               		.loc 1 518 0
+ 2164 0308 F901      		movw r30,r18
+ 2165 030a E050      		subi r30,lo8(-(newAdcResult))
+ 2166 030c F040      		sbci r31,hi8(-(newAdcResult))
+ 2167 030e D083      		st Z,r29
+ 520:vec9_io.c     **** 				adcSampleCount=0;						// Restart accumulator
+ 2168               		.loc 1 520 0
+ 2169 0310 1092 0000 		sts adcSampleCount,__zero_reg__
+ 521:vec9_io.c     **** 				tossCounter=SAMPLES_TO_TOSS;			// Ignore initial samples after switching the mux
+ 2170               		.loc 1 521 0
+ 2171 0314 1093 0000 		sts tossCounter.3839,r17
+ 522:vec9_io.c     **** 				adcResultTemp=0;						// Clear temp register
+ 2172               		.loc 1 522 0
+ 2173 0318 1092 0000 		sts adcResultTemp,__zero_reg__
+ 2174 031c 1092 0000 		sts adcResultTemp+1,__zero_reg__
+ 2175 0320 1092 0000 		sts adcResultTemp+2,__zero_reg__
+ 2176 0324 1092 0000 		sts adcResultTemp+3,__zero_reg__
+ 524:vec9_io.c     **** 				currentAdcSource++;						// Get our next signal source
+ 2177               		.loc 1 524 0
+ 2178 0328 81E0      		ldi r24,lo8(1)
+ 2179 032a 840F      		add r24,r20
+ 525:vec9_io.c     **** 				if(currentAdcSource>=NUM_ADC)			// Roll it around
+ 2180               		.loc 1 525 0
+ 2181 032c 8230      		cpi r24,lo8(2)
+ 2182 032e 00F4      		brsh .L261
+ 524:vec9_io.c     **** 				currentAdcSource++;						// Get our next signal source
+ 2183               		.loc 1 524 0
+ 2184 0330 8093 0000 		sts currentAdcSource,r24
+ 2185 0334 00C0      		rjmp .L262
+ 2186               	.L261:
+ 527:vec9_io.c     **** 					currentAdcSource=0;
+ 2187               		.loc 1 527 0
+ 2188 0336 1092 0000 		sts currentAdcSource,__zero_reg__
+ 2189               	.L262:
+ 530:vec9_io.c     **** 				switch(currentAdcSource)		// Set mux to the next signal source
+ 2190               		.loc 1 530 0
+ 2191 033a 8091 0000 		lds r24,currentAdcSource
+ 2192 033e 8823      		tst r24
+ 2193 0340 01F0      		breq .L263
+ 2194 0342 8130      		cpi r24,lo8(1)
+ 2195 0344 01F4      		brne .L260
+ 538:vec9_io.c     **** 					ADCA.CH0.CTRL=ADC_CH_INPUTMODE_DIFF_gc;							// Differential input, no gain.
+ 2196               		.loc 1 538 0
+ 2197 0346 C093 2002 		sts 544,r28
+ 539:vec9_io.c     **** 					ADCA.CH0.MUXCTRL=ADC_CH_MUXPOS_PIN1_gc|ADC_CH_MUXNEG_PIN3_gc;	// Positive input is PIN1 (PA1),
+ 2198               		.loc 1 539 0
+ 2199 034a F092 2102 		sts 545,r15
+ 2200 034e 00C0      		rjmp .L260
+ 2201               	.L263:
+ 533:vec9_io.c     **** 					ADCA.CH0.CTRL=ADC_CH_INPUTMODE_DIFF_gc;							// Differential input, no gain.
+ 2202               		.loc 1 533 0
+ 2203 0350 C093 2002 		sts 544,r28
+ 534:vec9_io.c     **** 					ADCA.CH0.MUXCTRL=ADC_CH_MUXPOS_PIN2_gc|ADC_CH_MUXNEG_PIN3_gc;	// Positive input is PIN2 (PA2),
+ 2204               		.loc 1 534 0
+ 2205 0354 0093 2102 		sts 545,r16
+ 2206               	.L260:
+ 549:vec9_io.c     **** 			ADCA.CH0.INTFLAGS|=ADC_CH0IF_bm;	// Clear flag
+ 2207               		.loc 1 549 0
+ 2208 0358 8091 2302 		lds r24,547
+ 2209 035c 8160      		ori r24,lo8(1)
+ 2210 035e 8093 2302 		sts 547,r24
+ 550:vec9_io.c     **** 			ADCA.CH0.CTRL|=ADC_CH_START_bm; 	// Start conversion on channel 0
+ 2211               		.loc 1 550 0
+ 2212 0362 8091 2002 		lds r24,544
+ 2213 0366 8068      		ori r24,lo8(-128)
+ 2214 0368 8093 2002 		sts 544,r24
+ 2215               	.L257:
+ 2216               	.LBE63:
+ 2217               	.LBE62:
+ 2218               	.LBB64:
+ 2219               	.LBB65:
+ 371:vec9_io.c     **** 	lastKeyState=keyState;					// Record old keystate for comparison's sake
+ 2220               		.loc 1 371 0
+ 2221 036c 8091 0000 		lds r24,keyState
+ 2222 0370 9091 0000 		lds r25,keyState+1
+ 2223 0374 8093 0000 		sts lastKeyState.3817,r24
+ 2224 0378 9093 0000 		sts lastKeyState.3817+1,r25
+ 373:vec9_io.c     **** 	if(CheckTimer(TIMER_DEBOUNCE))
+ 2225               		.loc 1 373 0
+ 2226 037c 83E0      		ldi r24,lo8(3)
+ 2227 037e 0E94 0000 		call CheckTimer
+ 2228               	.LVL101:
+ 2229 0382 8823      		tst r24
+ 2230 0384 01F0      		breq .L265
+ 375:vec9_io.c     **** 		keyState=PORTB.IN;								// Grab all PORTB inputs
+ 2231               		.loc 1 375 0
+ 2232 0386 8091 2806 		lds r24,1576
+ 376:vec9_io.c     **** 		keyState|=((unsigned int)PORTC.IN&0x1F)<<8;		// Grab bottom 5 PORTC
+ 2233               		.loc 1 376 0
+ 2234 038a 2091 4806 		lds r18,1608
+ 2235 038e 2F71      		andi r18,lo8(31)
+ 2236 0390 90E0      		ldi r25,0
+ 2237 0392 922B      		or r25,r18
+ 2238 0394 8093 0000 		sts keyState,r24
+ 2239 0398 9093 0000 		sts keyState+1,r25
+ 378:vec9_io.c     **** 		if(PORTE.IN&(1<<2))		// Check test switch, alone on this port
+ 2240               		.loc 1 378 0
+ 2241 039c 2091 8806 		lds r18,1672
+ 2242 03a0 22FF      		sbrs r18,2
+ 2243 03a2 00C0      		rjmp .L266
+ 380:vec9_io.c     **** 			keyState|=Im_TEST;
+ 2244               		.loc 1 380 0
+ 2245 03a4 9062      		ori r25,32
+ 2246 03a6 8093 0000 		sts keyState,r24
+ 2247 03aa 9093 0000 		sts keyState+1,r25
+ 2248               	.L266:
+ 383:vec9_io.c     **** 		SetTimer(TIMER_DEBOUNCE,(SECOND/64));
+ 2249               		.loc 1 383 0
+ 2250 03ae 6EE2      		ldi r22,lo8(46)
+ 2251 03b0 70E0      		ldi r23,0
+ 2252 03b2 83E0      		ldi r24,lo8(3)
+ 2253 03b4 0E94 0000 		call SetTimer
+ 2254               	.LVL102:
+ 2255               	.L265:
+ 386:vec9_io.c     **** 	newKeys=((keyState^lastKeyState)&(keyState));			// Flag the keys which have been pressed since the
+ 2256               		.loc 1 386 0
+ 2257 03b8 4091 0000 		lds r20,lastKeyState.3817
+ 2258 03bc 5091 0000 		lds r21,lastKeyState.3817+1
+ 2259 03c0 8091 0000 		lds r24,keyState
+ 2260 03c4 9091 0000 		lds r25,keyState+1
+ 2261 03c8 9A01      		movw r18,r20
+ 2262 03ca 2095      		com r18
+ 2263 03cc 3095      		com r19
+ 2264 03ce 2823      		and r18,r24
+ 2265 03d0 3923      		and r19,r25
+ 2266 03d2 2093 0000 		sts newKeys,r18
+ 2267 03d6 3093 0000 		sts newKeys+1,r19
+ 387:vec9_io.c     **** 	newKeysReleased=lastKeyState&(keyState^lastKeyState);	// And the ones immediately un-pressed
+ 2268               		.loc 1 387 0
+ 2269 03da 8095      		com r24
+ 2270 03dc 9095      		com r25
+ 2271 03de 8423      		and r24,r20
+ 2272 03e0 9523      		and r25,r21
+ 2273 03e2 8093 0000 		sts newKeysReleased,r24
+ 2274 03e6 9093 0000 		sts newKeysReleased+1,r25
+ 2275               	.LBE65:
+ 2276               	.LBE64:
+1334:vec9_io.c     **** 
+1335:vec9_io.c     **** 	SetState(DoStartupTest);
+1336:vec9_io.c     **** 
+1337:vec9_io.c     **** 	while(1)
+1338:vec9_io.c     **** 	{
+1339:vec9_io.c     **** 		UpdateAdc();
+1340:vec9_io.c     **** 		HandleSwitches();
+1341:vec9_io.c     **** 		State();	// Execute the current program state
+ 2277               		.loc 1 1341 0
+ 2278 03ea E091 0000 		lds r30,State
+ 2279 03ee F091 0000 		lds r31,State+1
+ 2280 03f2 0995      		icall
+ 2281               	.LVL103:
+1342:vec9_io.c     **** 	}
+ 2282               		.loc 1 1342 0
+ 2283 03f4 00C0      		rjmp .L267
+ 2284               		.cfi_endproc
+ 2285               	.LFE25:
+ 2287               		.local	lastKeyState.3817
+ 2288               		.comm	lastKeyState.3817,2,1
+ 2289               		.data
+ 2292               	tossCounter.3839:
+ 2293 0000 04        		.byte	4
+ 2294               		.local	rxMessageState.3882
+ 2295               		.comm	rxMessageState.3882,1,1
+ 2296               		.local	lastOutputByteLow.3903
+ 2297               		.comm	lastOutputByteLow.3903,1,1
+ 2298               		.local	lastOutputByteMiddle.3902
+ 2299               		.comm	lastOutputByteMiddle.3902,1,1
+ 2300               		.local	lastOutputByteHigh.3901
+ 2301               		.comm	lastOutputByteHigh.3901,1,1
+ 2302               		.local	lampCounter.3905
+ 2303               		.comm	lampCounter.3905,1,1
+ 2304               		.local	shiftIndex.3904
+ 2305               		.comm	shiftIndex.3904,1,1
+ 2306               		.local	analogPitch
+ 2307               		.comm	analogPitch,1,1
+ 2308               		.local	analogRoll
+ 2309               		.comm	analogRoll,1,1
+ 2310               		.local	outputByteLow
+ 2311               		.comm	outputByteLow,1,1
+ 2312               		.local	outputByteMiddle
+ 2313               		.comm	outputByteMiddle,1,1
+ 2314               		.local	outputByteHigh
+ 2315               		.comm	outputByteHigh,1,1
+ 2316               		.local	adcSampleCount
+ 2317               		.comm	adcSampleCount,1,1
+ 2318               		.local	adcResultTemp
+ 2319               		.comm	adcResultTemp,4,1
+ 2320               		.local	currentAdcSource
+ 2321               		.comm	currentAdcSource,1,1
+ 2322               		.local	newAdcResult
+ 2323               		.comm	newAdcResult,2,1
+ 2324               		.local	adcResults
+ 2325               		.comm	adcResults,4,1
+ 2326               		.local	newKeysReleased
+ 2327               		.comm	newKeysReleased,2,1
+ 2328               		.local	newKeys
+ 2329               		.comm	newKeys,2,1
+ 2330               		.local	keyState
+ 2331               		.comm	keyState,2,1
+ 2332               		.local	bytesInRxFifo
+ 2333               		.comm	bytesInRxFifo,1,1
+ 2334               		.local	dump
+ 2335               		.comm	dump,1,1
+ 2336               		.local	fifoWritePointer
+ 2337               		.comm	fifoWritePointer,1,1
+ 2338               		.local	fifoReadPointer
+ 2339               		.comm	fifoReadPointer,1,1
+ 2340               		.local	rxFifo
+ 2341               		.comm	rxFifo,64,1
+ 2342               		.local	txBytesToSend
+ 2343               		.comm	txBytesToSend,1,1
+ 2344               		.local	txBufferIndex
+ 2345               		.comm	txBufferIndex,1,1
+ 2346               		.local	txBuffer
+ 2347               		.comm	txBuffer,16,1
+ 2348               		.text
+ 2349               	.Letext0:
+ 2350               		.file 2 "/usr/lib/avr/include/stdint.h"
+ 2351               		.file 3 "/usr/lib/avr/include/stdio.h"
+ 2352               		.file 4 "/usr/lib/avr/include/avr/iox64a3.h"
+ 2353               		.file 5 "defines.h"
+ 2354               		.file 6 "globals.h"
+ 2355               		.file 7 "softclock.h"
+ 2356               		.file 8 "uart.h"
+DEFINED SYMBOLS
+                            *ABS*:00000000 vec9_io.c
+     /tmp/ccwSw5US.s:2      *ABS*:0000003e __SP_H__
+     /tmp/ccwSw5US.s:3      *ABS*:0000003d __SP_L__
+     /tmp/ccwSw5US.s:4      *ABS*:0000003f __SREG__
+     /tmp/ccwSw5US.s:5      *ABS*:0000003b __RAMPZ__
+     /tmp/ccwSw5US.s:6      *ABS*:00000034 __CCP__
+     /tmp/ccwSw5US.s:7      *ABS*:00000000 __tmp_reg__
+     /tmp/ccwSw5US.s:8      *ABS*:00000001 __zero_reg__
+     /tmp/ccwSw5US.s:13     .text:00000000 CCPWrite
+     /tmp/ccwSw5US.s:60     .text:00000016 UartPutChar
+     /tmp/ccwSw5US.s:100    .text:00000038 SetOutputs
+     /tmp/ccwSw5US.s:2313   .bss:0000000c outputByteHigh
+     /tmp/ccwSw5US.s:2311   .bss:0000000b outputByteMiddle
+     /tmp/ccwSw5US.s:2309   .bss:0000000a outputByteLow
+     /tmp/ccwSw5US.s:382    .text:00000186 DoStartupTest
+     /tmp/ccwSw5US.s:2303   .bss:00000007 shiftIndex.3904
+     /tmp/ccwSw5US.s:2301   .bss:00000006 lampCounter.3905
+     /tmp/ccwSw5US.s:2299   .bss:00000005 lastOutputByteHigh.3901
+     /tmp/ccwSw5US.s:2297   .bss:00000004 lastOutputByteMiddle.3902
+     /tmp/ccwSw5US.s:2295   .bss:00000003 lastOutputByteLow.3903
+     /tmp/ccwSw5US.s:2329   .bss:0000001d keyState
+     /tmp/ccwSw5US.s:2325   .bss:00000019 newKeysReleased
+     /tmp/ccwSw5US.s:2321   .bss:00000013 newAdcResult
+     /tmp/ccwSw5US.s:2323   .bss:00000015 adcResults
+     /tmp/ccwSw5US.s:2305   .bss:00000008 analogPitch
+     /tmp/ccwSw5US.s:2307   .bss:00000009 analogRoll
+     /tmp/ccwSw5US.s:2331   .bss:0000001f bytesInRxFifo
+     /tmp/ccwSw5US.s:1335   .text:0000070a DoUpdateIo
+     /tmp/ccwSw5US.s:1090   .text:0000060a SetState
+     /tmp/ccwSw5US.s:1110   .text:00000618 __vector_default
+     /tmp/ccwSw5US.s:1147   .text:00000630 __vector_47
+     /tmp/ccwSw5US.s:1194   .text:0000065e __vector_119
+     /tmp/ccwSw5US.s:2335   .bss:00000021 fifoWritePointer
+     /tmp/ccwSw5US.s:2339   .bss:00000023 rxFifo
+     /tmp/ccwSw5US.s:2333   .bss:00000020 dump
+     /tmp/ccwSw5US.s:1276   .text:000006c8 GetByteFromRxFifo
+     /tmp/ccwSw5US.s:2337   .bss:00000022 fifoReadPointer
+     /tmp/ccwSw5US.s:2288   .bss:00000002 rxMessageState.3882
+     /tmp/ccwSw5US.s:2341   .bss:00000063 txBytesToSend
+     /tmp/ccwSw5US.s:2345   .bss:00000065 txBuffer
+     /tmp/ccwSw5US.s:2343   .bss:00000064 txBufferIndex
+     /tmp/ccwSw5US.s:1567   .text:0000084a __vector_64
+     /tmp/ccwSw5US.s:1604   .text.startup:00000000 main
+     /tmp/ccwSw5US.s:2317   .bss:0000000e adcResultTemp
+     /tmp/ccwSw5US.s:2315   .bss:0000000d adcSampleCount
+     /tmp/ccwSw5US.s:2319   .bss:00000012 currentAdcSource
+     /tmp/ccwSw5US.s:2327   .bss:0000001b newKeys
+     /tmp/ccwSw5US.s:2292   .data:00000000 tossCounter.3839
+                             .bss:00000000 lastKeyState.3817
+
+UNDEFINED SYMBOLS
+subState
+SetTimer
+CheckTimer
+State
+systemTicks
+UartTxBufferReady
+UartSendByte
+InitUart
+fdevopen
+printf
+__do_copy_data
+__do_clear_bss
