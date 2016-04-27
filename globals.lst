@@ -16,17 +16,17 @@
   16               		.file 1 "globals.c"
   17               		.file 2 "defines.h"
 DEFINED SYMBOLS
-                            *ABS*:00000000 globals.c
-     /tmp/ccpyORRp.s:2      *ABS*:0000003e __SP_H__
-     /tmp/ccpyORRp.s:3      *ABS*:0000003d __SP_L__
-     /tmp/ccpyORRp.s:4      *ABS*:0000003f __SREG__
-     /tmp/ccpyORRp.s:5      *ABS*:0000003b __RAMPZ__
-     /tmp/ccpyORRp.s:6      *ABS*:00000034 __CCP__
-     /tmp/ccpyORRp.s:7      *ABS*:00000000 __tmp_reg__
-     /tmp/ccpyORRp.s:8      *ABS*:00000001 __zero_reg__
-                            *COM*:00000002 systemTicks
-                            *COM*:00000001 subState
-                            *COM*:00000002 State
+                            *ABS*:0000000000000000 globals.c
+     /tmp/ccRdKgkG.s:2      *ABS*:000000000000003e __SP_H__
+     /tmp/ccRdKgkG.s:3      *ABS*:000000000000003d __SP_L__
+     /tmp/ccRdKgkG.s:4      *ABS*:000000000000003f __SREG__
+     /tmp/ccRdKgkG.s:5      *ABS*:000000000000003b __RAMPZ__
+     /tmp/ccRdKgkG.s:6      *ABS*:0000000000000034 __CCP__
+     /tmp/ccRdKgkG.s:7      *ABS*:0000000000000000 __tmp_reg__
+     /tmp/ccRdKgkG.s:8      *ABS*:0000000000000001 __zero_reg__
+                            *COM*:0000000000000002 systemTicks
+                            *COM*:0000000000000001 subState
+                            *COM*:0000000000000002 State
 
 UNDEFINED SYMBOLS
 __do_clear_bss

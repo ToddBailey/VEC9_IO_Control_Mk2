@@ -2,7 +2,7 @@
 // Todd Michael Bailey
 
 //=============================
-// Atmel AVR ATXmega384d3u
+// Atmel AVR ATXmega64a3
 // 20MHz Silicon Oscillator (LTC6905)
 // GCC 4.8.2
 //==============================
@@ -11,10 +11,19 @@
 /*
 Description:
 ==============================================================================
-NOTE -- this was first based on the older PS2 adapter for VEC9 which used serial communications to a PS2 controller.
-The newer unit uses the M1 Abrams Tank Gun Control Yoke and has generic IOs (reads resistances and switch closures, and sends out on/off bits)
+Updated VEC9 front panel hardware.
+This unit removes all the serial/parallel adapters and hardware hanging around from the original dev board which were alternately annoying or unused.
+Drivers for incandescents and the siren are added to the board.
+Connectorization hopefully makes sense now.
+(Note -- according to at least one datasheet a DB15 contact carries 2A, so we can use them for incandescents and sirens)
 
-The "start of message" bytes are PS2 related, and can (should) change.
+
+NOTE -- this is currently the second of two IO controllers (and the second design).  "The Old One" refers to the first, which was cobbled together from multiple boards.
+
+NOTE -- the VEC9 prototype was based on the older PS2 adapter which used serial communications to a PS2 controller.
+The I/O controllers proper (both old and new) use the M1 Abrams Gunner's Control Handle and have generic IOs (reads resistances and switch closures, and sends out on/off bits)
+
+The "start of message" bytes are PS2 related, and can (maybe should) change.  There may be other PS2 stuff hanging around.
 
 Inputs:
 ----------------
@@ -23,10 +32,9 @@ Yoke Roll (analog)
 Yoke Triggers Right (3)
 Yoke Triggers Left (3)
 Safety Switches (4)
-Illuminated Switches (2 -- NC (annoying))
-Key Switch (1) (unused)
-Coin Switch (1) (replaces key switch)
-Test Mode switch (1)
+Illuminated Switches (2 -- old units were NC, annoying)
+Coin Switch (1) (replaced old placeholder for key switch)
+Test Mode / Service Menu switch (1)
 Total: 14 + 2
 
 Outputs:
@@ -40,10 +48,9 @@ Total: 21
 
 Total IO = 37
 
-In order to get all these, we drive the R/G LEDs with a serial-parallel converter (a 595 and inverters)
+(On the old unit, in order to get all these, we drive the R/G LEDs with a serial-parallel converter (a 595 and inverters))
 
-==================================================================================================
-==================================================================================================
+The new unit routes to different IO pins, and also adds 6 spare I/O lines and one spare ADC line.
 
 ==================================================================================================
 ==================================================================================================
@@ -59,11 +66,14 @@ PC-To-Xmega (Poll Request / Set outputs):
 
 Reply from XMEGA:
 ------------------------
-0x41 switchData0 switchlData1 0 0 analogRoll analogPitch
+0x41 switchMsb switchLsb 0 0 analogRoll analogPitch
 
+// Tue Apr 26 18:05:25 EDT 2016
+// Bitmask VEC9 Host is expecting:
+// ----------------------------
+//	15		14		13		12		11		10		9		8		7		6		5		4		3		2		1		0
+//	(x)		(x) 	Test	Coin	Pbtn1	Pbtn0	Tog3	Tog2	Tog1	Tog0	LGrip	LThumb	LTrig	Rgrip	Rthumb	RTrig
 
-Timer Hardware Usage:
---------------------------
 
 
 */
@@ -332,32 +342,42 @@ static unsigned int
 
 static void InitSwitches(void)
 // Sets up user input -- any physical switches which need to be debounced.
-// PB0-7 and PC0-4 are switch inputs
-// PE2 is our test mode switch input
+// PA5-7 are inputs
+// PB0-7 are all inputs
+// PC0-2 are inputs
 // NOTE -- we invert the data coming in from these pins, so a pressed switch is read as a ONE later.
-// The pushbuttons (PC2 and PC3) are NC, so DON'T invert them.
 // NOTE -- For PORTB to work right, JTAG gotta go.
 {
+	PORTA.DIRCLR=0xE0;									// Top three bits
+	PORTA.PIN5CTRL=PORT_INVEN_bm|PORT_OPC_PULLUP_gc;	// Set them to be pulled up and inverted
+	PORTA.PIN6CTRL=PORT_INVEN_bm|PORT_OPC_PULLUP_gc;	// Set them to be pulled up and inverted
+	PORTA.PIN7CTRL=PORT_INVEN_bm|PORT_OPC_PULLUP_gc;	// Set them to be pulled up and inverted
+
 	PORTB.DIRCLR=0xFF;									// All bits
 	PORTCFG.MPCMASK=0xFF;								// Configure these pins on this port next time we write the config register
 	PORTB.PIN0CTRL=PORT_INVEN_bm|PORT_OPC_PULLUP_gc;	// Set them to be pulled up and inverted
 
-	PORTC.DIRCLR=0x1F;									// Bottom five bits
-//	PORTCFG.MPCMASK=0x1F;								// Configure these pins on this port next time we write the config register
+	PORTC.DIRCLR=0x07;									// Bottom three bits
 	PORTC.PIN0CTRL=PORT_INVEN_bm|PORT_OPC_PULLUP_gc;	// Set them to be pulled up and inverted
 	PORTC.PIN1CTRL=PORT_INVEN_bm|PORT_OPC_PULLUP_gc;	// Set them to be pulled up and inverted
-	PORTC.PIN2CTRL=PORT_OPC_PULLUP_gc;					// Set them to be pulled up
-	PORTC.PIN3CTRL=PORT_OPC_PULLUP_gc;					// Set them to be pulled up
-	PORTC.PIN4CTRL=PORT_INVEN_bm|PORT_OPC_PULLUP_gc;	// Set them to be pulled up and inverted
-
-	PORTE.DIRCLR=(1<<2);								// PE2 to input
-	PORTE.PIN2CTRL=PORT_INVEN_bm|PORT_OPC_PULLUP_gc;	// Set to be pulled up and inverted
+	PORTC.PIN2CTRL=PORT_INVEN_bm|PORT_OPC_PULLUP_gc;	// Set them to be pulled up and inverted
 
 	keyState=0;		// No keys pressed
 	newKeys=0;		// No keys new
 
 	SetTimer(TIMER_DEBOUNCE,(SECOND/64));
 }
+
+
+// Tue Apr 26 18:05:25 EDT 2016
+// The old application just stuffed the keystate into the serial output, so the switch bits to the host were determined by their order on the ports and the order those ports were read
+// by HandleSwitches().  Since the hardware has changed 
+// There are currently 14 inputs.
+// Bitmask VEC9 is expecting:
+// ----------------------------
+//	15		14		13		12		11		10		9		8		7		6		5		4		3		2		1		0
+//	(x)		(x) 	Test	Coin	Pbtn1	Pbtn0	Tog3	Tog2	Tog1	Tog0	LGrip	LThumb	LTrig	Rgrip	Rthumb	RTrig
+
 
 
 static void HandleSwitches(void)
@@ -367,18 +387,38 @@ static void HandleSwitches(void)
 {
 	static unsigned int
 		lastKeyState;
+	unsigned int
+		temp;
 
 	lastKeyState=keyState;					// Record old keystate for comparison's sake
 
 	if(CheckTimer(TIMER_DEBOUNCE))
 	{
-		keyState=PORTB.IN;								// Grab all PORTB inputs
-		keyState|=((unsigned int)PORTC.IN&0x1F)<<8;		// Grab bottom 5 PORTC
+		temp=0;
+		temp=(PORTA.IN>>5)&0x07;				// Right hand buttons to position
 
-		if(PORTE.IN&(1<<2))		// Check test switch, alone on this port
+		temp|=((unsigned int)PORTB.IN)<<3;		// Grab all of PORTB (test switch will be in wrong spot)
+
+		temp|=((unsigned int)PORTC.IN&0x06)<<9;	// Get two pushbuttons.  Note, we don't scoot this over all 10 bits since we have a 0 in bit 0 (where the coin was).
+		
+		if(PORTC.IN&(1<<0))		// Check coin switch, out of order
 		{
-			keyState|=Im_TEST;
+			temp|=Im_COIN;
 		}
+		if(PORTB.IN&(1<<7))		// Check test switch, out of order
+		{
+			temp|=Im_TEST;
+		}
+			
+		keyState=temp;
+
+//		keyState=PORTB.IN;								// Grab all PORTB inputs
+//		keyState|=((unsigned int)PORTC.IN&0x1F)<<8;		// Grab bottom 5 PORTC
+
+//		if(PORTE.IN&(1<<2))		// Check test switch, alone on this port
+//		{
+//			keyState|=Im_TEST;
+//		}
 
 		SetTimer(TIMER_DEBOUNCE,(SECOND/64));
 	}
@@ -558,237 +598,36 @@ static void UpdateAdc(void)
 // Output Handling
 //-----------------------------------------------------------------------
 //-----------------------------------------------------------------------
-#define		SER_CLK_MASK	(1<<6)		// On PORTA
-#define		SER_DATA_MASK	(1<<7)		// On PORTA
+
+// The three bytes that the host sends us are defined in defines.h
 
 static unsigned char
-	outputByteHigh,
-	outputByteMiddle,
-	outputByteLow;
-
-static void InitSerialLeds(void)
-// Clock "off" bits out to the leds on the serial-to-parallel latch, make sure we start with LEDs off.
-{
-	unsigned char
-		i;
-
-	PORTA.OUTCLR=SER_CLK_MASK;		// Clock starts low
-	PORTA.OUTSET=SER_DATA_MASK;		// Inverted -- a set bit turns the LED off.
-	MACRO_DoTenNops;
-	
-	for(i=0;i<20;i++)
-	{
-		PORTA.OUTCLR=SER_CLK_MASK;		// Bring clock low
-		MACRO_DoTenNops;				// Wait
-		PORTA.OUTSET=SER_DATA_MASK;		// Set data correctly
-		MACRO_DoTenNops;				// Wait
-		PORTA.OUTSET=SER_CLK_MASK;		// Bring clock high (latch in data)
-		MACRO_DoTenNops;				// Wait
-	}
-
-	PORTA.OUTCLR=SER_CLK_MASK;		// Clock ends low
-	PORTA.OUTSET=SER_DATA_MASK;		// Data ends high
-}
+	outputByteHigh=0,
+	outputByteMiddle=0,
+	outputByteLow=0;
 
 static void InitOutputs(void)
-// Turn all output pins to drivers and set them low
-{
-	PORTC.OUTCLR=0xE0;
-	PORTC.DIRSET=0xE0;		
+// Turn all output pins to drivers and set them low except damage LEDs, set them high.
+{	
+	PORTC.OUTCLR=0x38;		// Bits 3, 4, 5
+	PORTC.DIRSET=0x38;		
 
-	PORTD.OUTCLR=0xFF;		
+	PORTD.OUTSET=0xFF;		// Everything off (LEDs, bits inverted)	
 	PORTD.DIRSET=0xFF;		
 
-	PORTE.OUTCLR=0x03;		
-	PORTE.DIRSET=0x03;		
+	PORTE.OUTCLR=0xFF;		// Everything off (lamps, not inverted)
+	PORTE.DIRSET=0xFF;		
 
-	PORTA.OUTCLR=0xF0;		
-	PORTA.DIRSET=0xF0;		
-
-	// Initialize 595 outputs:
-	InitSerialLeds();	
-}
-
-static void SetSerialLeds(void)
-// Sets the LEDs on the 595 based on the status of our output mask
-// Outputs of 595:
-// ------------------
-//	Qa		Green 0
-//	Qb		Green 1
-//	Qc		Green 2
-//	Qd		Green 3
-//	Qe		Red 0
-//	Qf		Red 1
-//	Qg		Red 2
-//	Qh		Red 3
-// -------------------
-// Data propogates from Qa to Qh.  So if you clock in 8 bits, the first bit in ends up in Qh.
-// Per the DS:
-// "If both clocks are connected together, the shift register is always one clock pulse ahead of the storage register"
-// Pretty sure this means we need to toggle the clock once more when we're done.
-{
-	unsigned char
-		i,
-		serOutputMask;
-		
-	serOutputMask=0xFF;				// Start with mask set to off
-
-	// Put bits into mask in the correct order
-	if(outputByteLow&Om_RED_LED_3)
-	{
-		serOutputMask&=~(1<<0);
-	}
-	if(outputByteLow&Om_RED_LED_2)
-	{
-		serOutputMask&=~(1<<1);
-	}
-	if(outputByteLow&Om_RED_LED_1)
-	{
-		serOutputMask&=~(1<<2);
-	}
-	if(outputByteLow&Om_RED_LED_0)
-	{
-		serOutputMask&=~(1<<3);
-	}
-
-	if(outputByteLow&Om_GREEN_LED_3)
-	{
-		serOutputMask&=~(1<<4);
-	}
-	if(outputByteLow&Om_GREEN_LED_2)
-	{
-		serOutputMask&=~(1<<5);
-	}
-	if(outputByteLow&Om_GREEN_LED_1)
-	{
-		serOutputMask&=~(1<<6);
-	}
-	if(outputByteLow&Om_GREEN_LED_0)
-	{
-		serOutputMask&=~(1<<7);
-	}
-
-	for(i=0;i<8;i++)	// Clock out one byte (clock should always start low)
-	{
-		if(serOutputMask&(1<<i))			// Set data correctly		
-		{
-			PORTA.OUTSET=SER_DATA_MASK;		
-		}
-		else
-		{
-			PORTA.OUTCLR=SER_DATA_MASK;				
-		}
-		PORTA.OUTSET=SER_CLK_MASK;		// Bring clock high (latch in data)
-		PORTA.OUTCLR=SER_CLK_MASK;		// Bring clock low
-	}
-
-	// Clock out one remaining bit to get 595 registers in sync
-
-	PORTA.OUTSET=SER_DATA_MASK;		// Don't care (off)
-	PORTA.OUTSET=SER_CLK_MASK;		// Bring clock high (latch in data)
-	PORTA.OUTCLR=SER_CLK_MASK;		// Bring clock low
+	PORTF.OUTCLR=0x03;		// Bits 0, 1
+	PORTF.DIRSET=0x03;		
 }
 
 static void SetOutputs(void)
-// Sets output bits based on the value of the output masks
+// Sets output bits based on what we got from the host.
 {
-	// PORTC
+	// High byte (Flight indicators)
 	// -----------------------------------------
 	if(outputByteHigh&Om_FLIGHT_IND_0)
-	{
-		PORTC.OUTSET=(1<<5);
-	}
-	else
-	{
-		PORTC.OUTCLR=(1<<5);	
-	}
-	if(outputByteHigh&Om_FLIGHT_IND_1)
-	{
-		PORTC.OUTSET=(1<<6);
-	}
-	else
-	{
-		PORTC.OUTCLR=(1<<6);	
-	}
-	if(outputByteHigh&Om_FLIGHT_IND_2)
-	{
-		PORTC.OUTSET=(1<<7);
-	}
-	else
-	{
-		PORTC.OUTCLR=(1<<7);	
-	}
-
-	// PORTD
-	// -----------------------------------------
-	if(outputByteHigh&Om_FLIGHT_IND_3)
-	{
-		PORTD.OUTSET=(1<<0);
-	}
-	else
-	{
-		PORTD.OUTCLR=(1<<0);	
-	}
-	if(outputByteHigh&Om_FLIGHT_IND_4)
-	{
-		PORTD.OUTSET=(1<<1);
-	}
-	else
-	{
-		PORTD.OUTCLR=(1<<1);	
-	}
-	if(outputByteMiddle&Om_FLIGHT_IND_5)
-	{
-		PORTD.OUTSET=(1<<2);
-	}
-	else
-	{
-		PORTD.OUTCLR=(1<<2);	
-	}
-	if(outputByteMiddle&Om_FLIGHT_IND_6)
-	{
-		PORTD.OUTSET=(1<<3);
-	}
-	else
-	{
-		PORTD.OUTCLR=(1<<3);	
-	}
-	if(outputByteMiddle&Om_FLIGHT_IND_7)
-	{
-		PORTD.OUTSET=(1<<4);
-	}
-	else
-	{
-		PORTD.OUTCLR=(1<<4);	
-	}
-	if(outputByteMiddle&Om_FLIGHT_IND_8)
-	{
-		PORTD.OUTSET=(1<<5);
-	}
-	else
-	{
-		PORTD.OUTCLR=(1<<5);	
-	}
-	if(outputByteMiddle&Om_FLIGHT_IND_9)
-	{
-		PORTD.OUTSET=(1<<6);
-	}
-	else
-	{
-		PORTD.OUTCLR=(1<<6);	
-	}
-	if(outputByteMiddle&Om_AIR_HORN)
-	{
-		PORTD.OUTSET=(1<<7);
-	}
-	else
-	{
-		PORTD.OUTCLR=(1<<7);	
-	}
-
-	// PORTE
-	// -----------------------------------------
-	if(outputByteMiddle&Om_PUSHBUTTON_LAMP_0)
 	{
 		PORTE.OUTSET=(1<<0);
 	}
@@ -796,7 +635,7 @@ static void SetOutputs(void)
 	{
 		PORTE.OUTCLR=(1<<0);	
 	}
-	if(outputByteMiddle&Om_PUSHBUTTON_LAMP_1)
+	if(outputByteHigh&Om_FLIGHT_IND_1)
 	{
 		PORTE.OUTSET=(1<<1);
 	}
@@ -804,8 +643,168 @@ static void SetOutputs(void)
 	{
 		PORTE.OUTCLR=(1<<1);	
 	}
+	if(outputByteHigh&Om_FLIGHT_IND_2)
+	{
+		PORTE.OUTSET=(1<<2);
+	}
+	else
+	{
+		PORTE.OUTCLR=(1<<2);	
+	}
 
-	SetSerialLeds();		// Clock data out to 595	
+	if(outputByteHigh&Om_FLIGHT_IND_3)
+	{
+		PORTE.OUTSET=(1<<3);
+	}
+	else
+	{
+		PORTE.OUTCLR=(1<<3);	
+	}
+	if(outputByteHigh&Om_FLIGHT_IND_4)
+	{
+		PORTE.OUTSET=(1<<4);
+	}
+	else
+	{
+		PORTE.OUTCLR=(1<<4);	
+	}
+
+	// Middle Byte (Flight ind, horn, PB lamps)
+	// ---------------------------------------------
+
+	if(outputByteMiddle&Om_FLIGHT_IND_5)
+	{
+		PORTE.OUTSET=(1<<5);
+	}
+	else
+	{
+		PORTE.OUTCLR=(1<<5);	
+	}
+	if(outputByteMiddle&Om_FLIGHT_IND_6)
+	{
+		PORTE.OUTSET=(1<<6);
+	}
+	else
+	{
+		PORTE.OUTCLR=(1<<6);	
+	}
+	if(outputByteMiddle&Om_FLIGHT_IND_7)
+	{
+		PORTE.OUTSET=(1<<7);
+	}
+	else
+	{
+		PORTE.OUTCLR=(1<<7);	
+	}
+	if(outputByteMiddle&Om_FLIGHT_IND_8)
+	{
+		PORTF.OUTSET=(1<<0);
+	}
+	else
+	{
+		PORTF.OUTCLR=(1<<0);	
+	}
+	if(outputByteMiddle&Om_FLIGHT_IND_9)
+	{
+		PORTF.OUTSET=(1<<1);
+	}
+	else
+	{
+		PORTF.OUTCLR=(1<<1);	
+	}
+	if(outputByteMiddle&Om_AIR_HORN)
+	{
+		PORTC.OUTSET=(1<<5);
+	}
+	else
+	{
+		PORTC.OUTCLR=(1<<5);	
+	}
+	if(outputByteMiddle&Om_PUSHBUTTON_LAMP_0)
+	{
+		PORTC.OUTSET=(1<<3);
+	}
+	else
+	{
+		PORTC.OUTCLR=(1<<3);	
+	}
+	if(outputByteMiddle&Om_PUSHBUTTON_LAMP_1)
+	{
+		PORTC.OUTSET=(1<<4);
+	}
+	else
+	{
+		PORTC.OUTCLR=(1<<4);	
+	}
+
+	// Low Byte (Damage / Code LEDs)
+	// Note -- invert these (hex inverts buffer AVR's outputs)
+	// --------------------------------------------------------
+
+	if(outputByteLow&Om_GREEN_LED_0)
+	{
+		PORTD.OUTCLR=(1<<4);
+	}
+	else
+	{
+		PORTD.OUTSET=(1<<4);	
+	}
+	if(outputByteLow&Om_GREEN_LED_1)
+	{
+		PORTD.OUTCLR=(1<<5);
+	}
+	else
+	{
+		PORTD.OUTSET=(1<<5);	
+	}
+	if(outputByteLow&Om_GREEN_LED_2)
+	{
+		PORTD.OUTCLR=(1<<6);
+	}
+	else
+	{
+		PORTD.OUTSET=(1<<6);	
+	}
+	if(outputByteLow&Om_GREEN_LED_3)
+	{
+		PORTD.OUTCLR=(1<<7);
+	}
+	else
+	{
+		PORTD.OUTSET=(1<<7);	
+	}
+	if(outputByteLow&Om_RED_LED_0)
+	{
+		PORTD.OUTCLR=(1<<0);
+	}
+	else
+	{
+		PORTD.OUTSET=(1<<0);	
+	}
+	if(outputByteLow&Om_RED_LED_1)
+	{
+		PORTD.OUTCLR=(1<<1);
+	}
+	else
+	{
+		PORTD.OUTSET=(1<<1);	
+	}
+	if(outputByteLow&Om_RED_LED_2)
+	{
+		PORTD.OUTCLR=(1<<2);
+	}
+	else
+	{
+		PORTD.OUTSET=(1<<2);	
+	}
+	if(outputByteLow&Om_RED_LED_3)
+	{
+		PORTD.OUTCLR=(1<<3);
+	}
+	else
+	{
+		PORTD.OUTSET=(1<<3);	
+	}
 }
 
 //-----------------------------------------------------------------------
@@ -823,7 +822,6 @@ static unsigned char
 ISR(PORTD_INT0_vect)	
 {
 }
-
 
 static void UpdateIncomingSerial(void)
 // Inhales incoming serial from the PC and puts it out to the program when the entire message comes in.
@@ -872,6 +870,7 @@ static void UpdateIncomingSerial(void)
 	}
 
 	if(gotMessage)
+//	if(CheckTimer(TIMER_1))
 	{
 		SetOutputs();
 
@@ -890,6 +889,9 @@ static void UpdateIncomingSerial(void)
 			txBytesToSend=7;
 			txBufferIndex=0;
 		}
+
+		//SetTimer(TIMER_1,(SECOND/8));
+		//printf("%x %x %d %d\n",(unsigned char)((keyState>>8)&0xFF),(unsigned char)(keyState&0xFF),analogRoll,analogPitch);
 	}
 }
 
@@ -1330,9 +1332,10 @@ int main(void)
 
 	RST.STATUS=0x3F;				// Clear reset cause flags	
 	
-	printf("\nI live! %s\n",BUILD_DATE);
+	printf("\n**People's Glorious VEC9 Cockpit Controller**\nTMB\n%s\n",BUILD_DATE);
 
 	SetState(DoStartupTest);
+	//SetState(DoUpdateIo);
 
 	while(1)
 	{

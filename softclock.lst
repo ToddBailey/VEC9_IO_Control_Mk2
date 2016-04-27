@@ -44,7 +44,7 @@
   22:softclock.c   **** 
   23:softclock.c   **** 	sreg=SREG;	// Keep operations atomic -- ISR changes systemTicks.
   24               		.loc 1 23 0
-  25 0000 2FB7      		in r18,__SREG__
+  25 0000 9FB7      		in r25,__SREG__
   26               	.LVL1:
   24:softclock.c   **** 	cli();
   27               		.loc 1 24 0
@@ -57,207 +57,209 @@
   33               	/* #NOAPP */
   34 0004 E82F      		mov r30,r24
   35 0006 F0E0      		ldi r31,0
-  36 0008 8091 0000 		lds r24,systemTicks
-  37 000c 9091 0000 		lds r25,systemTicks+1
-  38               	.LVL2:
-  39 0010 EE0F      		lsl r30
-  40 0012 FF1F      		rol r31
-  41               	.LVL3:
-  42 0014 E050      		subi r30,lo8(-(entryTime))
-  43 0016 F040      		sbci r31,hi8(-(entryTime))
-  44 0018 8083      		st Z,r24
-  45 001a 9183      		std Z+1,r25
+  36 0008 2091 0000 		lds r18,systemTicks
+  37 000c 3091 0000 		lds r19,systemTicks+1
+  38 0010 EE0F      		lsl r30
+  39 0012 FF1F      		rol r31
+  40               	.LVL2:
+  41 0014 E050      		subi r30,lo8(-(entryTime))
+  42 0016 F040      		sbci r31,hi8(-(entryTime))
+  43 0018 2083      		st Z,r18
+  44 001a 3183      		std Z+1,r19
   26:softclock.c   **** 	SREG=sreg;
-  46               		.loc 1 26 0
-  47 001c 2FBF      		out __SREG__,r18
-  48 001e 0895      		ret
-  49               		.cfi_endproc
-  50               	.LFE2:
-  52               	.global	SetTimer
-  54               	SetTimer:
-  55               	.LFB3:
+  45               		.loc 1 26 0
+  46 001c 9FBF      		out __SREG__,r25
+  47 001e 0895      		ret
+  48               		.cfi_endproc
+  49               	.LFE2:
+  51               	.global	SetTimer
+  53               	SetTimer:
+  54               	.LFB3:
   27:softclock.c   **** }
   28:softclock.c   **** 
   29:softclock.c   **** void SetTimer(unsigned char timerNum, unsigned int ticks_to_wait)
   30:softclock.c   **** // Sets a software timer with an entry time and an amount of time before it expires.
   31:softclock.c   **** {
-  56               		.loc 1 31 0
-  57               		.cfi_startproc
-  58               	.LVL4:
-  59               	/* prologue: function */
-  60               	/* frame size = 0 */
-  61               	/* stack size = 0 */
-  62               	.L__stack_usage = 0
+  55               		.loc 1 31 0
+  56               		.cfi_startproc
+  57               	.LVL3:
+  58               	/* prologue: function */
+  59               	/* frame size = 0 */
+  60               	/* stack size = 0 */
+  61               	.L__stack_usage = 0
   32:softclock.c   **** 	unsigned char 
   33:softclock.c   **** 		sreg;
   34:softclock.c   **** 
   35:softclock.c   **** 	sreg=SREG;	// Keep operations atomic -- ISR changes systemTicks.
-  63               		.loc 1 35 0
-  64 0020 4FB7      		in r20,__SREG__
-  65               	.LVL5:
+  62               		.loc 1 35 0
+  63 0020 2FB7      		in r18,__SREG__
+  64               	.LVL4:
   36:softclock.c   **** 	cli();
-  66               		.loc 1 36 0
-  67               	/* #APP */
-  68               	 ;  36 "softclock.c" 1
-  69 0022 F894      		cli
-  70               	 ;  0 "" 2
+  65               		.loc 1 36 0
+  66               	/* #APP */
+  67               	 ;  36 "softclock.c" 1
+  68 0022 F894      		cli
+  69               	 ;  0 "" 2
   37:softclock.c   **** 
   38:softclock.c   **** 	entryTime[timerNum]=systemTicks;
-  71               		.loc 1 38 0
-  72               	/* #NOAPP */
-  73 0024 90E0      		ldi r25,0
-  74 0026 2091 0000 		lds r18,systemTicks
-  75 002a 3091 0000 		lds r19,systemTicks+1
-  76 002e 880F      		lsl r24
-  77 0030 991F      		rol r25
-  78               	.LVL6:
-  79 0032 FC01      		movw r30,r24
-  80 0034 E050      		subi r30,lo8(-(entryTime))
-  81 0036 F040      		sbci r31,hi8(-(entryTime))
-  82 0038 2083      		st Z,r18
-  83 003a 3183      		std Z+1,r19
+  70               		.loc 1 38 0
+  71               	/* #NOAPP */
+  72 0024 90E0      		ldi r25,0
+  73 0026 4091 0000 		lds r20,systemTicks
+  74 002a 5091 0000 		lds r21,systemTicks+1
+  75 002e 880F      		lsl r24
+  76 0030 991F      		rol r25
+  77               	.LVL5:
+  78 0032 FC01      		movw r30,r24
+  79 0034 E050      		subi r30,lo8(-(entryTime))
+  80 0036 F040      		sbci r31,hi8(-(entryTime))
+  81 0038 4083      		st Z,r20
+  82 003a 5183      		std Z+1,r21
   39:softclock.c   **** 	delayTime[timerNum]=ticks_to_wait;
-  84               		.loc 1 39 0
-  85 003c FC01      		movw r30,r24
-  86 003e E050      		subi r30,lo8(-(delayTime))
-  87 0040 F040      		sbci r31,hi8(-(delayTime))
-  88 0042 6083      		st Z,r22
-  89 0044 7183      		std Z+1,r23
+  83               		.loc 1 39 0
+  84 003c FC01      		movw r30,r24
+  85 003e E050      		subi r30,lo8(-(delayTime))
+  86 0040 F040      		sbci r31,hi8(-(delayTime))
+  87 0042 6083      		st Z,r22
+  88 0044 7183      		std Z+1,r23
   40:softclock.c   **** 
   41:softclock.c   **** 	SREG=sreg;
-  90               		.loc 1 41 0
-  91 0046 4FBF      		out __SREG__,r20
-  92 0048 0895      		ret
-  93               		.cfi_endproc
-  94               	.LFE3:
-  96               	.global	CheckTimer
-  98               	CheckTimer:
-  99               	.LFB4:
+  89               		.loc 1 41 0
+  90 0046 2FBF      		out __SREG__,r18
+  91 0048 0895      		ret
+  92               		.cfi_endproc
+  93               	.LFE3:
+  95               	.global	CheckTimer
+  97               	CheckTimer:
+  98               	.LFB4:
   42:softclock.c   **** }
   43:softclock.c   **** 
   44:softclock.c   **** unsigned char CheckTimer(unsigned char timerNum)
   45:softclock.c   **** // If the current system time MINUS the entry time is greater than (or equal to) the amount of tick
   46:softclock.c   **** // Ie, return true if the time is up, and false if it isn't.
   47:softclock.c   **** {
- 100               		.loc 1 47 0
- 101               		.cfi_startproc
- 102               	.LVL7:
- 103               	/* prologue: function */
- 104               	/* frame size = 0 */
- 105               	/* stack size = 0 */
- 106               	.L__stack_usage = 0
+  99               		.loc 1 47 0
+ 100               		.cfi_startproc
+ 101               	.LVL6:
+ 102               	/* prologue: function */
+ 103               	/* frame size = 0 */
+ 104               	/* stack size = 0 */
+ 105               	.L__stack_usage = 0
   48:softclock.c   **** 	unsigned char 
   49:softclock.c   **** 		sreg;
   50:softclock.c   **** 
   51:softclock.c   **** 	sreg=SREG;	// Keep operations atomic -- ISR changes systemTicks.
- 107               		.loc 1 51 0
- 108 004a 6FB7      		in r22,__SREG__
- 109               	.LVL8:
+ 106               		.loc 1 51 0
+ 107 004a 4FB7      		in r20,__SREG__
+ 108               	.LVL7:
   52:softclock.c   **** 	cli();
- 110               		.loc 1 52 0
- 111               	/* #APP */
- 112               	 ;  52 "softclock.c" 1
- 113 004c F894      		cli
- 114               	 ;  0 "" 2
+ 109               		.loc 1 52 0
+ 110               	/* #APP */
+ 111               	 ;  52 "softclock.c" 1
+ 112 004c F894      		cli
+ 113               	 ;  0 "" 2
   53:softclock.c   **** 	
   54:softclock.c   **** 	if((systemTicks-entryTime[timerNum])>=delayTime[timerNum])
- 115               		.loc 1 54 0
- 116               	/* #NOAPP */
- 117 004e 2091 0000 		lds r18,systemTicks
- 118 0052 3091 0000 		lds r19,systemTicks+1
- 119 0056 90E0      		ldi r25,0
- 120 0058 880F      		lsl r24
- 121 005a 991F      		rol r25
- 122               	.LVL9:
- 123 005c FC01      		movw r30,r24
- 124 005e E050      		subi r30,lo8(-(entryTime))
- 125 0060 F040      		sbci r31,hi8(-(entryTime))
- 126 0062 4081      		ld r20,Z
- 127 0064 5181      		ldd r21,Z+1
- 128 0066 FC01      		movw r30,r24
- 129 0068 E050      		subi r30,lo8(-(delayTime))
- 130 006a F040      		sbci r31,hi8(-(delayTime))
- 131 006c 8081      		ld r24,Z
- 132 006e 9181      		ldd r25,Z+1
- 133 0070 241B      		sub r18,r20
- 134 0072 350B      		sbc r19,r21
+ 114               		.loc 1 54 0
+ 115               	/* #NOAPP */
+ 116 004e 2091 0000 		lds r18,systemTicks
+ 117 0052 3091 0000 		lds r19,systemTicks+1
+ 118 0056 90E0      		ldi r25,0
+ 119 0058 880F      		lsl r24
+ 120 005a 991F      		rol r25
+ 121               	.LVL8:
+ 122 005c FC01      		movw r30,r24
+ 123 005e E050      		subi r30,lo8(-(entryTime))
+ 124 0060 F040      		sbci r31,hi8(-(entryTime))
+ 125 0062 0190      		ld __tmp_reg__,Z+
+ 126 0064 F081      		ld r31,Z
+ 127 0066 E02D      		mov r30,__tmp_reg__
+ 128 0068 DC01      		movw r26,r24
+ 129 006a A050      		subi r26,lo8(-(delayTime))
+ 130 006c B040      		sbci r27,hi8(-(delayTime))
+ 131 006e 6D91      		ld r22,X+
+ 132 0070 7C91      		ld r23,X
+ 133 0072 C901      		movw r24,r18
+ 134 0074 8E1B      		sub r24,r30
+ 135 0076 9F0B      		sbc r25,r31
   55:softclock.c   **** 	{
   56:softclock.c   **** 		SREG=sreg;		// Restore interrupt state.
- 135               		.loc 1 56 0
- 136 0074 6FBF      		out __SREG__,r22
-  54:softclock.c   **** 	if((systemTicks-entryTime[timerNum])>=delayTime[timerNum])
- 137               		.loc 1 54 0
- 138 0076 2817      		cp r18,r24
- 139 0078 3907      		cpc r19,r25
- 140 007a 00F0      		brlo .L4
+ 136               		.loc 1 56 0
+ 137 0078 4FBF      		out __SREG__,r20
+  54:softclock.c   **** 	{
+ 138               		.loc 1 54 0
+ 139 007a 8617      		cp r24,r22
+ 140 007c 9707      		cpc r25,r23
+ 141 007e 00F0      		brlo .L4
   57:softclock.c   **** 		return(true);
- 141               		.loc 1 57 0
- 142 007c 81E0      		ldi r24,lo8(1)
- 143 007e 0895      		ret
- 144               	.L4:
+ 142               		.loc 1 57 0
+ 143 0080 81E0      		ldi r24,lo8(1)
+ 144 0082 0895      		ret
+ 145               	.L4:
   58:softclock.c   **** 	}
   59:softclock.c   **** 	else
   60:softclock.c   **** 	{
   61:softclock.c   **** 		SREG=sreg;		// Restore interrupt state.
   62:softclock.c   **** 		return(false);
- 145               		.loc 1 62 0
- 146 0080 80E0      		ldi r24,0
+ 146               		.loc 1 62 0
+ 147 0084 80E0      		ldi r24,0
   63:softclock.c   **** 	}
   64:softclock.c   **** }
- 147               		.loc 1 64 0
- 148 0082 0895      		ret
- 149               		.cfi_endproc
- 150               	.LFE4:
- 152               	.global	ExpireTimer
- 154               	ExpireTimer:
- 155               	.LFB5:
+ 148               		.loc 1 64 0
+ 149 0086 0895      		ret
+ 150               		.cfi_endproc
+ 151               	.LFE4:
+ 153               	.global	ExpireTimer
+ 155               	ExpireTimer:
+ 156               	.LFB5:
   65:softclock.c   **** 
   66:softclock.c   **** void ExpireTimer(unsigned char timerNum)
   67:softclock.c   **** // Sets a timer check to return false the next time it is checked.  IE, "runs out" the passed timer
   68:softclock.c   **** {
- 156               		.loc 1 68 0
- 157               		.cfi_startproc
- 158               	.LVL10:
- 159               	/* prologue: function */
- 160               	/* frame size = 0 */
- 161               	/* stack size = 0 */
- 162               	.L__stack_usage = 0
+ 157               		.loc 1 68 0
+ 158               		.cfi_startproc
+ 159               	.LVL9:
+ 160               	/* prologue: function */
+ 161               	/* frame size = 0 */
+ 162               	/* stack size = 0 */
+ 163               	.L__stack_usage = 0
   69:softclock.c   **** 	delayTime[timerNum]=0;		// Zero ticks until we're expired.  
- 163               		.loc 1 69 0
- 164 0084 E82F      		mov r30,r24
- 165 0086 F0E0      		ldi r31,0
- 166 0088 EE0F      		lsl r30
- 167 008a FF1F      		rol r31
- 168 008c E050      		subi r30,lo8(-(delayTime))
- 169 008e F040      		sbci r31,hi8(-(delayTime))
- 170 0090 1082      		st Z,__zero_reg__
- 171 0092 1182      		std Z+1,__zero_reg__
- 172 0094 0895      		ret
- 173               		.cfi_endproc
- 174               	.LFE5:
- 176               		.local	delayTime
- 177               		.comm	delayTime,10,1
- 178               		.local	entryTime
- 179               		.comm	entryTime,10,1
- 180               	.Letext0:
- 181               		.file 2 "/usr/lib/avr/include/stdint.h"
- 182               		.file 3 "defines.h"
- 183               		.file 4 "globals.h"
+ 164               		.loc 1 69 0
+ 165 0088 E82F      		mov r30,r24
+ 166 008a F0E0      		ldi r31,0
+ 167 008c EE0F      		lsl r30
+ 168 008e FF1F      		rol r31
+ 169               	.LVL10:
+ 170 0090 E050      		subi r30,lo8(-(delayTime))
+ 171 0092 F040      		sbci r31,hi8(-(delayTime))
+ 172 0094 1082      		st Z,__zero_reg__
+ 173 0096 1182      		std Z+1,__zero_reg__
+ 174 0098 0895      		ret
+ 175               		.cfi_endproc
+ 176               	.LFE5:
+ 178               		.local	delayTime
+ 179               		.comm	delayTime,10,1
+ 180               		.local	entryTime
+ 181               		.comm	entryTime,10,1
+ 182               	.Letext0:
+ 183               		.file 2 "/home/avrToolchain/avr/include/stdint.h"
+ 184               		.file 3 "defines.h"
+ 185               		.file 4 "globals.h"
 DEFINED SYMBOLS
-                            *ABS*:00000000 softclock.c
-     /tmp/ccRJzBJB.s:2      *ABS*:0000003e __SP_H__
-     /tmp/ccRJzBJB.s:3      *ABS*:0000003d __SP_L__
-     /tmp/ccRJzBJB.s:4      *ABS*:0000003f __SREG__
-     /tmp/ccRJzBJB.s:5      *ABS*:0000003b __RAMPZ__
-     /tmp/ccRJzBJB.s:6      *ABS*:00000034 __CCP__
-     /tmp/ccRJzBJB.s:7      *ABS*:00000000 __tmp_reg__
-     /tmp/ccRJzBJB.s:8      *ABS*:00000001 __zero_reg__
-     /tmp/ccRJzBJB.s:14     .text:00000000 ResetTimer
-     /tmp/ccRJzBJB.s:177    .bss:0000000a entryTime
-     /tmp/ccRJzBJB.s:54     .text:00000020 SetTimer
-                             .bss:00000000 delayTime
-     /tmp/ccRJzBJB.s:98     .text:0000004a CheckTimer
-     /tmp/ccRJzBJB.s:154    .text:00000084 ExpireTimer
+                            *ABS*:0000000000000000 softclock.c
+     /tmp/cc9qw0LQ.s:2      *ABS*:000000000000003e __SP_H__
+     /tmp/cc9qw0LQ.s:3      *ABS*:000000000000003d __SP_L__
+     /tmp/cc9qw0LQ.s:4      *ABS*:000000000000003f __SREG__
+     /tmp/cc9qw0LQ.s:5      *ABS*:000000000000003b __RAMPZ__
+     /tmp/cc9qw0LQ.s:6      *ABS*:0000000000000034 __CCP__
+     /tmp/cc9qw0LQ.s:7      *ABS*:0000000000000000 __tmp_reg__
+     /tmp/cc9qw0LQ.s:8      *ABS*:0000000000000001 __zero_reg__
+     /tmp/cc9qw0LQ.s:14     .text:0000000000000000 ResetTimer
+     /tmp/cc9qw0LQ.s:179    .bss:000000000000000a entryTime
+     /tmp/cc9qw0LQ.s:53     .text:0000000000000020 SetTimer
+                             .bss:0000000000000000 delayTime
+     /tmp/cc9qw0LQ.s:97     .text:000000000000004a CheckTimer
+     /tmp/cc9qw0LQ.s:155    .text:0000000000000088 ExpireTimer
 
 UNDEFINED SYMBOLS
 systemTicks

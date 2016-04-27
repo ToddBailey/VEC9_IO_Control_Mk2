@@ -43,6 +43,11 @@
 # Wed Sep 19 11:38:07 CDT 2007
 # F_CPU is only set in the code, also.
 
+# Add dowloaded toolchain path to real PATH
+TOOLS_HOME := /home/avrToolchain
+PATH := ${PATH}:${TOOLS_HOME}/bin
+TOOL_INCLUDES := ${TOOLS_HOME}/avr/include
+
 # MCU name
 # Also the name AVRDUDE wants.
 MCU = atxmega64a3
@@ -92,7 +97,7 @@ DEBUG = dwarf-2
 #     Each directory must be seperated by a space.
 #     Use forward slashes for directory separators.
 #     For a directory that has spaces, enclose it in quotes.
-EXTRAINCDIRS = 
+EXTRAINCDIRS = /home/avrToolchain/avr/include
 
 
 # Compiler flag to set the C Standard level.

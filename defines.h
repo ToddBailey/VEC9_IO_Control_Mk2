@@ -98,7 +98,6 @@ enum								// Add more timers here if you need them, but don't get greedy.
 #define		I_TOGGLE_3			9
 #define		I_PUSHBUTTON_0		10
 #define		I_PUSHBUTTON_1		11
-//#define		I_KEY				12
 #define		I_COIN				12
 #define		I_TEST				13
 
@@ -115,41 +114,40 @@ enum								// Add more timers here if you need them, but don't get greedy.
 #define		Im_TOGGLE_3			(1<<I_TOGGLE_3)		
 #define		Im_PUSHBUTTON_0		(1<<I_PUSHBUTTON_0)	
 #define		Im_PUSHBUTTON_1		(1<<I_PUSHBUTTON_1)	
-//#define		Im_KEY				(1<<I_KEY)
 #define		Im_COIN				(1<<I_COIN)
 #define		Im_TEST				(1<<I_TEST)
 
 
 // Output bits (see wiring diagram for where these go in hardware)
-// These are broken into 3 bytes rather than one long int, for speed sake
+// These are broken into 3 bytes rather than one long int.
+// There are outputs on PORTs C,D,E, and F.
 
 // outputByteHigh
-#define		O_FLIGHT_IND_0			4		// PC5
-#define		O_FLIGHT_IND_1			3		// PC6
-#define		O_FLIGHT_IND_2			2		// PC7
-#define		O_FLIGHT_IND_3			1		// PD0
-#define		O_FLIGHT_IND_4			0		// PD1
+#define		O_FLIGHT_IND_0			4		// PE0
+#define		O_FLIGHT_IND_1			3		// PE1
+#define		O_FLIGHT_IND_2			2		// PE2
+#define		O_FLIGHT_IND_3			1		// PE3
+#define		O_FLIGHT_IND_4			0		// PE4
 
 // outputByteMid
-#define		O_FLIGHT_IND_5			7		// PD2
-#define		O_FLIGHT_IND_6			6		// PD3
-#define		O_FLIGHT_IND_7			5		// PD4
-#define		O_FLIGHT_IND_8			4		// PD5
-#define		O_FLIGHT_IND_9			3		// PD6
-#define		O_AIR_HORN				2		// PD7
-#define		O_PUSHBUTTON_LAMP_0		1		// PE0
-#define		O_PUSHBUTTON_LAMP_1		0		// PE1
+#define		O_FLIGHT_IND_5			7		// PE5
+#define		O_FLIGHT_IND_6			6		// PE6
+#define		O_FLIGHT_IND_7			5		// PE7
+#define		O_FLIGHT_IND_8			4		// PF0
+#define		O_FLIGHT_IND_9			3		// PF1
+#define		O_AIR_HORN				2		// PC5
+#define		O_PUSHBUTTON_LAMP_0		1		// PC3
+#define		O_PUSHBUTTON_LAMP_1		0		// PC4
 
-// outputByteLow
-#define		O_GREEN_LED_0			7		// All LEDs on 595 
-#define		O_GREEN_LED_1			6		
-#define		O_GREEN_LED_2			5
-#define		O_GREEN_LED_3			4
-#define		O_RED_LED_0				3
-#define		O_RED_LED_1				2
-#define		O_RED_LED_2				1
-#define		O_RED_LED_3				0
-
+// outputByteLow (NOTE, the LED bit polarities are inverted)
+#define		O_GREEN_LED_0			7		// PD4
+#define		O_GREEN_LED_1			6		// PD5
+#define		O_GREEN_LED_2			5		// PD6
+#define		O_GREEN_LED_3			4		// PD7
+#define		O_RED_LED_0				3		// PD0
+#define		O_RED_LED_1				2		// PD1
+#define		O_RED_LED_2				1		// PD2
+#define		O_RED_LED_3				0		// PD3
 
 // Output Mask
 

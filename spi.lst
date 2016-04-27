@@ -45,203 +45,201 @@
   22               	.L__stack_usage = 0
   25:spi.c         **** 	if(SPID.STATUS&SPI_IF_bm)
   23               		.loc 1 25 0
-  24 0000 E0EC      		ldi r30,lo8(-64)
-  25 0002 F9E0      		ldi r31,lo8(9)
-  26 0004 8281      		ldd r24,Z+2
+  24 0000 8091 C209 		lds r24,2498
   26:spi.c         **** 	{
   27:spi.c         **** 		return(true);
   28:spi.c         **** 	}
   29:spi.c         **** 	return(false);
   30:spi.c         **** }
-  27               		.loc 1 30 0
-  28 0006 881F      		rol r24
-  29 0008 8827      		clr r24
-  30 000a 881F      		rol r24
-  31 000c 0895      		ret
-  32               		.cfi_endproc
-  33               	.LFE2:
-  35               	.global	TransferSpiByte
-  37               	TransferSpiByte:
-  38               	.LFB3:
+  25               		.loc 1 30 0
+  26 0004 881F      		rol r24
+  27 0006 8827      		clr r24
+  28 0008 881F      		rol r24
+  29 000a 0895      		ret
+  30               		.cfi_endproc
+  31               	.LFE2:
+  33               	.global	TransferSpiByte
+  35               	TransferSpiByte:
+  36               	.LFB3:
   31:spi.c         **** 
   32:spi.c         **** unsigned char TransferSpiByte(unsigned char theByte)
   33:spi.c         **** // Loads a byte into the SPI transmit shift register, waits until the transfer is complete, and the
   34:spi.c         **** // Checks to make sure the transmitter is ready first.
   35:spi.c         **** {
-  39               		.loc 1 35 0
-  40               		.cfi_startproc
-  41               	.LVL0:
-  42               	/* prologue: function */
-  43               	/* frame size = 0 */
-  44               	/* stack size = 0 */
-  45               	.L__stack_usage = 0
+  37               		.loc 1 35 0
+  38               		.cfi_startproc
+  39               	.LVL0:
+  40               	/* prologue: function */
+  41               	/* frame size = 0 */
+  42               	/* stack size = 0 */
+  43               	.L__stack_usage = 0
   36:spi.c         **** 
   37:spi.c         **** 	SPID.DATA=theByte;				// Load the xmit buffer and start the transfer.
-  46               		.loc 1 37 0
-  47 000e 8093 C309 		sts 2499,r24
-  48               	.LVL1:
-  49               	.L4:
+  44               		.loc 1 37 0
+  45 000c 8093 C309 		sts 2499,r24
+  46               	.LVL1:
+  47               	.L3:
   38:spi.c         **** 
   39:spi.c         **** 	while(!(SPID.STATUS&SPI_IF_bm))	// Spin until the transfer is complete
-  50               		.loc 1 39 0 discriminator 1
-  51 0012 8091 C209 		lds r24,2498
-  52 0016 87FF      		sbrs r24,7
-  53 0018 00C0      		rjmp .L4
+  48               		.loc 1 39 0 discriminator 1
+  49 0010 8091 C209 		lds r24,2498
+  50 0014 87FF      		sbrs r24,7
+  51 0016 00C0      		rjmp .L3
   40:spi.c         **** 		;
   41:spi.c         **** 	return(SPID.DATA);
-  54               		.loc 1 41 0
-  55 001a 8091 C309 		lds r24,2499
+  52               		.loc 1 41 0
+  53 0018 8091 C309 		lds r24,2499
   42:spi.c         **** }
-  56               		.loc 1 42 0
-  57 001e 0895      		ret
-  58               		.cfi_endproc
-  59               	.LFE3:
-  61               	.global	DoBusyWait
-  63               	DoBusyWait:
-  64               	.LFB4:
+  54               		.loc 1 42 0
+  55 001c 0895      		ret
+  56               		.cfi_endproc
+  57               	.LFE3:
+  59               	.global	DoBusyWait
+  61               	DoBusyWait:
+  62               	.LFB4:
   43:spi.c         **** 
   44:spi.c         **** void DoBusyWait(volatile unsigned int loops)
   45:spi.c         **** // Pull ~10 operations per loop plus overhead (probably more like 15)
   46:spi.c         **** {
-  65               		.loc 1 46 0
-  66               		.cfi_startproc
-  67               	.LVL2:
-  68 0020 CF93      		push r28
-  69               	.LCFI0:
-  70               		.cfi_def_cfa_offset 3
-  71               		.cfi_offset 28, -2
-  72 0022 DF93      		push r29
-  73               	.LCFI1:
-  74               		.cfi_def_cfa_offset 4
-  75               		.cfi_offset 29, -3
-  76 0024 00D0      		rcall .
-  77               	.LCFI2:
-  78               		.cfi_def_cfa_offset 6
-  79 0026 CDB7      		in r28,__SP_L__
-  80 0028 DEB7      		in r29,__SP_H__
-  81               	.LCFI3:
-  82               		.cfi_def_cfa_register 28
-  83               	/* prologue: function */
-  84               	/* frame size = 2 */
-  85               	/* stack size = 4 */
-  86               	.L__stack_usage = 4
-  87 002a 8983      		std Y+1,r24
-  88 002c 9A83      		std Y+2,r25
-  89               	.LVL3:
-  90               	.L7:
+  63               		.loc 1 46 0
+  64               		.cfi_startproc
+  65               	.LVL2:
+  66 001e CF93      		push r28
+  67               	.LCFI0:
+  68               		.cfi_def_cfa_offset 3
+  69               		.cfi_offset 28, -2
+  70 0020 DF93      		push r29
+  71               	.LCFI1:
+  72               		.cfi_def_cfa_offset 4
+  73               		.cfi_offset 29, -3
+  74 0022 00D0      		rcall .
+  75               	.LCFI2:
+  76               		.cfi_def_cfa_offset 6
+  77 0024 CDB7      		in r28,__SP_L__
+  78 0026 DEB7      		in r29,__SP_H__
+  79               	.LCFI3:
+  80               		.cfi_def_cfa_register 28
+  81               	/* prologue: function */
+  82               	/* frame size = 2 */
+  83               	/* stack size = 4 */
+  84               	.L__stack_usage = 4
+  85 0028 8983      		std Y+1,r24
+  86 002a 9A83      		std Y+2,r25
+  87               	.LVL3:
+  88               	.L7:
   47:spi.c         **** 	while(loops--)
-  91               		.loc 1 47 0 discriminator 1
-  92 002e 8981      		ldd r24,Y+1
-  93 0030 9A81      		ldd r25,Y+2
-  94 0032 9C01      		movw r18,r24
-  95 0034 2150      		subi r18,1
-  96 0036 3109      		sbc r19,__zero_reg__
-  97 0038 2983      		std Y+1,r18
-  98 003a 3A83      		std Y+2,r19
-  99 003c 892B      		or r24,r25
- 100 003e 01F0      		breq .L9
+  89               		.loc 1 47 0
+  90 002c 8981      		ldd r24,Y+1
+  91 002e 9A81      		ldd r25,Y+2
+  92 0030 9C01      		movw r18,r24
+  93 0032 2150      		subi r18,1
+  94 0034 3109      		sbc r19,__zero_reg__
+  95 0036 2983      		std Y+1,r18
+  96 0038 3A83      		std Y+2,r19
+  97 003a 892B      		or r24,r25
+  98 003c 01F0      		breq .L9
   48:spi.c         **** 	{
   49:spi.c         **** 		MACRO_DoTenNops;
- 101               		.loc 1 49 0
- 102               	/* #APP */
- 103               	 ;  49 "spi.c" 1
- 104 0040 0000      		nop
- 105               	 ;  0 "" 2
- 106               	 ;  49 "spi.c" 1
- 107 0042 0000      		nop
- 108               	 ;  0 "" 2
- 109               	 ;  49 "spi.c" 1
- 110 0044 0000      		nop
- 111               	 ;  0 "" 2
- 112               	 ;  49 "spi.c" 1
- 113 0046 0000      		nop
- 114               	 ;  0 "" 2
- 115               	 ;  49 "spi.c" 1
- 116 0048 0000      		nop
- 117               	 ;  0 "" 2
- 118               	 ;  49 "spi.c" 1
- 119 004a 0000      		nop
- 120               	 ;  0 "" 2
- 121               	 ;  49 "spi.c" 1
- 122 004c 0000      		nop
- 123               	 ;  0 "" 2
- 124               	 ;  49 "spi.c" 1
- 125 004e 0000      		nop
- 126               	 ;  0 "" 2
- 127               	 ;  49 "spi.c" 1
- 128 0050 0000      		nop
- 129               	 ;  0 "" 2
- 130               	 ;  49 "spi.c" 1
- 131 0052 0000      		nop
- 132               	 ;  0 "" 2
- 133               	/* #NOAPP */
- 134 0054 00C0      		rjmp .L7
- 135               	.L9:
- 136               	/* epilogue start */
+  99               		.loc 1 49 0
+ 100               	/* #APP */
+ 101               	 ;  49 "spi.c" 1
+ 102 003e 0000      		nop
+ 103               	 ;  0 "" 2
+ 104               	 ;  49 "spi.c" 1
+ 105 0040 0000      		nop
+ 106               	 ;  0 "" 2
+ 107               	 ;  49 "spi.c" 1
+ 108 0042 0000      		nop
+ 109               	 ;  0 "" 2
+ 110               	 ;  49 "spi.c" 1
+ 111 0044 0000      		nop
+ 112               	 ;  0 "" 2
+ 113               	 ;  49 "spi.c" 1
+ 114 0046 0000      		nop
+ 115               	 ;  0 "" 2
+ 116               	 ;  49 "spi.c" 1
+ 117 0048 0000      		nop
+ 118               	 ;  0 "" 2
+ 119               	 ;  49 "spi.c" 1
+ 120 004a 0000      		nop
+ 121               	 ;  0 "" 2
+ 122               	 ;  49 "spi.c" 1
+ 123 004c 0000      		nop
+ 124               	 ;  0 "" 2
+ 125               	 ;  49 "spi.c" 1
+ 126 004e 0000      		nop
+ 127               	 ;  0 "" 2
+ 128               	 ;  49 "spi.c" 1
+ 129 0050 0000      		nop
+ 130               	 ;  0 "" 2
+ 131               	/* #NOAPP */
+ 132 0052 00C0      		rjmp .L7
+ 133               	.L9:
+ 134               	/* epilogue start */
   50:spi.c         **** 	}
   51:spi.c         **** }
- 137               		.loc 1 51 0
- 138 0056 0F90      		pop __tmp_reg__
- 139 0058 0F90      		pop __tmp_reg__
- 140 005a DF91      		pop r29
- 141 005c CF91      		pop r28
- 142 005e 0895      		ret
- 143               		.cfi_endproc
- 144               	.LFE4:
- 146               	.global	InitSpi
- 148               	InitSpi:
- 149               	.LFB5:
+ 135               		.loc 1 51 0
+ 136 0054 0F90      		pop __tmp_reg__
+ 137 0056 0F90      		pop __tmp_reg__
+ 138 0058 DF91      		pop r29
+ 139 005a CF91      		pop r28
+ 140 005c 0895      		ret
+ 141               		.cfi_endproc
+ 142               	.LFE4:
+ 144               	.global	InitSpi
+ 146               	InitSpi:
+ 147               	.LFB5:
   52:spi.c         **** 
   53:spi.c         **** 
   54:spi.c         **** void InitSpi(void)
   55:spi.c         **** {
- 150               		.loc 1 55 0
- 151               		.cfi_startproc
- 152               	/* prologue: function */
- 153               	/* frame size = 0 */
- 154               	/* stack size = 0 */
- 155               	.L__stack_usage = 0
+ 148               		.loc 1 55 0
+ 149               		.cfi_startproc
+ 150               	/* prologue: function */
+ 151               	/* frame size = 0 */
+ 152               	/* stack size = 0 */
+ 153               	.L__stack_usage = 0
   56:spi.c         **** 	PORTD.OUTCLR=0xF0;		// All lines low to start
- 156               		.loc 1 56 0
- 157 0060 E0E6      		ldi r30,lo8(96)
- 158 0062 F6E0      		ldi r31,lo8(6)
- 159 0064 80EF      		ldi r24,lo8(-16)
- 160 0066 8683      		std Z+6,r24
+ 154               		.loc 1 56 0
+ 155 005e E0E6      		ldi r30,lo8(96)
+ 156 0060 F6E0      		ldi r31,lo8(6)
+ 157 0062 80EF      		ldi r24,lo8(-16)
+ 158 0064 8683      		std Z+6,r24
   57:spi.c         **** 	PORTD.DIRSET=0xB0;		// SCK, MOSI, SS to output
- 161               		.loc 1 57 0
- 162 0068 80EB      		ldi r24,lo8(-80)
- 163 006a 8183      		std Z+1,r24
+ 159               		.loc 1 57 0
+ 160 0066 80EB      		ldi r24,lo8(-80)
+ 161 0068 8183      		std Z+1,r24
   58:spi.c         **** 	
   59:spi.c         **** 	PORTD.DIRCLR=(1<<6);	// MISO to input
- 164               		.loc 1 59 0
- 165 006c 80E4      		ldi r24,lo8(64)
- 166 006e 8283      		std Z+2,r24
+ 162               		.loc 1 59 0
+ 163 006a 80E4      		ldi r24,lo8(64)
+ 164 006c 8283      		std Z+2,r24
   60:spi.c         **** 	
   61:spi.c         **** 	PR.PRPD&=~PR_SPI_bm;				// Turn SPI module on (on port D)
- 167               		.loc 1 61 0
- 168 0070 A0E7      		ldi r26,lo8(112)
- 169 0072 B0E0      		ldi r27,0
- 170 0074 1496      		adiw r26,4
- 171 0076 8C91      		ld r24,X
- 172 0078 1497      		sbiw r26,4
- 173 007a 877F      		andi r24,lo8(-9)
- 174 007c 1496      		adiw r26,4
- 175 007e 8C93      		st X,r24
+ 165               		.loc 1 61 0
+ 166 006e A0E7      		ldi r26,lo8(112)
+ 167 0070 B0E0      		ldi r27,0
+ 168 0072 1496      		adiw r26,4
+ 169 0074 8C91      		ld r24,X
+ 170 0076 1497      		sbiw r26,4
+ 171 0078 877F      		andi r24,lo8(-9)
+ 172 007a 1496      		adiw r26,4
+ 173 007c 8C93      		st X,r24
   62:spi.c         **** 	PORTD.PIN6CTRL=PORT_OPC_PULLUP_gc;	// Pull up inputs so they don't flop around
- 176               		.loc 1 62 0
- 177 0080 88E1      		ldi r24,lo8(24)
- 178 0082 868B      		std Z+22,r24
+ 174               		.loc 1 62 0
+ 175 007e 88E1      		ldi r24,lo8(24)
+ 176 0080 868B      		std Z+22,r24
   63:spi.c         **** 
   64:spi.c         **** 	PORTD.OUTSET=0x10;		// PD4 high (chip select)
- 179               		.loc 1 64 0
- 180 0084 80E1      		ldi r24,lo8(16)
- 181 0086 8583      		std Z+5,r24
+ 177               		.loc 1 64 0
+ 178 0082 80E1      		ldi r24,lo8(16)
+ 179 0084 8583      		std Z+5,r24
   65:spi.c         **** 
   66:spi.c         **** 	SPID.INTCTRL=0;											// No interrupts
- 182               		.loc 1 66 0
- 183 0088 E0EC      		ldi r30,lo8(-64)
- 184 008a F9E0      		ldi r31,lo8(9)
- 185 008c 1182      		std Z+1,__zero_reg__
+ 180               		.loc 1 66 0
+ 181 0086 E0EC      		ldi r30,lo8(-64)
+ 182 0088 F9E0      		ldi r31,lo8(9)
+ 183 008a 1182      		std Z+1,__zero_reg__
   67:spi.c         **** 
   68:spi.c         **** 	// Examples:
   69:spi.c         **** //	SPID.CTRL=SPI_ENABLE_bm|SPI_MASTER_bm|SPI_PRESCALER_DIV64_gc|SPI_MODE_3_gc;	// Enable SPI, Maste
@@ -251,28 +249,28 @@
   73:spi.c         **** //	SPID.CTRL=SPI_ENABLE_bm|SPI_MASTER_bm|SPI_PRESCALER_DIV16_gc|SPI_MODE_0_gc;	// Enable SPI, Maste
   74:spi.c         **** 
   75:spi.c         **** 	SPID.CTRL=SPI_ENABLE_bm|SPI_DORD_bm|SPI_MASTER_bm|SPI_PRESCALER_DIV64_gc|SPI_MODE_3_gc;	// Enable 
- 186               		.loc 1 75 0
- 187 008e 8EE7      		ldi r24,lo8(126)
- 188 0090 8083      		st Z,r24
- 189 0092 0895      		ret
- 190               		.cfi_endproc
- 191               	.LFE5:
- 193               	.Letext0:
- 194               		.file 2 "/usr/lib/avr/include/stdint.h"
- 195               		.file 3 "/usr/lib/avr/include/avr/iox64a3.h"
- 196               		.file 4 "defines.h"
+ 184               		.loc 1 75 0
+ 185 008c 8EE7      		ldi r24,lo8(126)
+ 186 008e 8083      		st Z,r24
+ 187 0090 0895      		ret
+ 188               		.cfi_endproc
+ 189               	.LFE5:
+ 191               	.Letext0:
+ 192               		.file 2 "/home/avrToolchain/avr/include/stdint.h"
+ 193               		.file 3 "/home/avrToolchain/avr/include/avr/iox64a3.h"
+ 194               		.file 4 "defines.h"
 DEFINED SYMBOLS
-                            *ABS*:00000000 spi.c
-     /tmp/cc1vs7rt.s:2      *ABS*:0000003e __SP_H__
-     /tmp/cc1vs7rt.s:3      *ABS*:0000003d __SP_L__
-     /tmp/cc1vs7rt.s:4      *ABS*:0000003f __SREG__
-     /tmp/cc1vs7rt.s:5      *ABS*:0000003b __RAMPZ__
-     /tmp/cc1vs7rt.s:6      *ABS*:00000034 __CCP__
-     /tmp/cc1vs7rt.s:7      *ABS*:00000000 __tmp_reg__
-     /tmp/cc1vs7rt.s:8      *ABS*:00000001 __zero_reg__
-     /tmp/cc1vs7rt.s:14     .text:00000000 SpiTransferComplete
-     /tmp/cc1vs7rt.s:37     .text:0000000e TransferSpiByte
-     /tmp/cc1vs7rt.s:63     .text:00000020 DoBusyWait
-     /tmp/cc1vs7rt.s:148    .text:00000060 InitSpi
+                            *ABS*:0000000000000000 spi.c
+     /tmp/ccK2XHOL.s:2      *ABS*:000000000000003e __SP_H__
+     /tmp/ccK2XHOL.s:3      *ABS*:000000000000003d __SP_L__
+     /tmp/ccK2XHOL.s:4      *ABS*:000000000000003f __SREG__
+     /tmp/ccK2XHOL.s:5      *ABS*:000000000000003b __RAMPZ__
+     /tmp/ccK2XHOL.s:6      *ABS*:0000000000000034 __CCP__
+     /tmp/ccK2XHOL.s:7      *ABS*:0000000000000000 __tmp_reg__
+     /tmp/ccK2XHOL.s:8      *ABS*:0000000000000001 __zero_reg__
+     /tmp/ccK2XHOL.s:14     .text:0000000000000000 SpiTransferComplete
+     /tmp/ccK2XHOL.s:35     .text:000000000000000c TransferSpiByte
+     /tmp/ccK2XHOL.s:61     .text:000000000000001e DoBusyWait
+     /tmp/ccK2XHOL.s:146    .text:000000000000005e InitSpi
 
 NO UNDEFINED SYMBOLS

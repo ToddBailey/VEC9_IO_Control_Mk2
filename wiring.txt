@@ -1,63 +1,66 @@
 Wiring / Port Assignments For VEC9 IO
+REVISION 2
 Atxmega64a3u
-On Narrat1ve Lil' Sorceror PCB
+On dedicated hardware (VEC9 I/O Controller)
 
 Todd Bailey
+Tue Apr 26 17:38:09 EDT 2016
 
 
-Port:		Function:				Color:
--------		------------------			----------	
 
-PORTA,0		(Vref +)
-PORTA,1		Yoke roll				White
-PORTA,2		Yoke pitch				G/Y
-PORTA,3		(Vref -)
-PORTA,4		(unused, was LED)			(was Brown)
-PORTA,5		(unused, was LED)			(was Orange)
-PORTA,6		CLK to 595				Yel
-PORTA,7		SER to 595				Green
+Port:		Old Function:				New Function:
+-------		------------------			--------------	
 
-PORTB,0		R Main Trig				Brown
-PORTB,1		R Thumb Trig				Orange
-PORTB,2		R Grip Trig				Yellow
-PORTB,3		L Main Trig				Green
-PORTB,4		L Thumb Trig				Blue
-PORTB,5		L Grip Trig				Purple
-PORTB,6		Toggle 0				Blue
-PORTB,7		Toggle 1				Purp
+PORTA,0		(Vref +)				" (ie, Vref, +2.5V))
+PORTA,1		Yoke roll				"
+PORTA,2		Yoke pitch				"
+PORTA,3		(Vref -)				"
+PORTA,4		(unused, was LED)			Spare ADC
+PORTA,5		(unused, was LED)			R Trig (in)
+PORTA,6		CLK to 595				R Thumb (in)
+PORTA,7		SER to 595				R Grip (in)
 
-PORTC,0		Toggle 2				Gray
-PORTC,1		Toggle 3				White
-PORTC,2		Red Pushbutton 0 (NC, annoying)		Stripes
-PORTC,3		Red Pushbutton 1 (NC, annoying)		Brown
-PORTC,4		Coin Switch (was Key Switch)		Blue
-PORTC,5		Flight indicator 0 (out)		Brown
-PORTC,6		Flight indicator 1 (out)		Orange
-PORTC,7		Flight indicator 2 (out)		Yel
+PORTB,0		R Main Trig				L Trig (in)
+PORTB,1		R Thumb Trig				L Thumb (in)
+PORTB,2		R Grip Trig				L Grip (in)
+PORTB,3		L Main Trig				Toggle 0 (in)
+PORTB,4		L Thumb Trig				Toggle 1 (in)
+PORTB,5		L Grip Trig				Toggle 2 (in)
+PORTB,6		Toggle 0				Toggle 3 (in)
+PORTB,7		Toggle 1				Test Mode / Service Menu Switch (in)
 
-PORTD,0		Flight indicator 3 (out)		Green
-PORTD,1		Flight indicator 4 (out)		Blue
-PORTD,2		Flight indicator 5 (out)		Purp
-PORTD,3		Flight indicator 6 (out)		Gray
-PORTD,4		Flight indicator 7 (out)		White
-PORTD,5		Flight indicator 8 (out)		G/Y
-PORTD,6		Flight indicator 9 (out)		Orange
-PORTD,7		Air Horn (out)				Yellow
+PORTC,0		Toggle 2				Coin (in)
+PORTC,1		Toggle 3				Pushbutton 0 (in, now a well-behaved NO)
+PORTC,2		Red Pushbutton 0 (NC, annoying)		Pushbutton 1 (in, as above)
+PORTC,3		Red Pushbutton 1 (NC, annoying)		Pushbutton 0 Lamp (out)
+PORTC,4		Coin Switch (was Key Switch)		Pushbutton 1 Lamp (out)
+PORTC,5		Flight indicator 0 (out)		Air Horn (out)
+PORTC,6		Flight indicator 1 (out)		Spare IO 0 (?)
+PORTC,7		Flight indicator 2 (out)		Spare IO 1 (?)
 
-PORTE,0		Red Pushbutton Lamp 0 (out)		Yel
-PORTE,1		Red Pushbutton Lamp 1 (out)		Green
-PORTE,2		Test Mode Switch (in)			White
-PORTE,3		(audio stuff)
-PORTE,4		(audio stuff)
-PORTE,5		(audio stuff)
-PORTE,6		(audio stuff)
-PORTE,7		(audio stuff)
+PORTD,0		Flight indicator 3 (out)		Damage Red LED 0 (out, inverted)
+PORTD,1		Flight indicator 4 (out)		Damage Red LED 1 (out, inverted)
+PORTD,2		Flight indicator 5 (out)		Damage Red LED 2 (out, inverted)
+PORTD,3		Flight indicator 6 (out)		Damage Red LED 3 (out, inverted)
+PORTD,4		Flight indicator 7 (out)		Damage Green LED 0 (out, inverted)
+PORTD,5		Flight indicator 8 (out)		Damage Green LED 1 (out, inverted)
+PORTD,6		Flight indicator 9 (out)		Damage Green LED 2 (out, inverted)
+PORTD,7		Air Horn (out)				Damage Green LED 3 (out, inverted)
 
-PORTF,0		(SMD Pad -- can use in a pinch)
-PORTF,1		(SMD Pad -- can use in a pinch)
-PORTF,2		UART Rx	
-PORTF,3		UART Tx
-PORTF,4		(NC)
-PORTF,5		(NC)
-PORTF,6		(NC)
-PORTF,7		(Amplifier SD)
+PORTE,0		Red Pushbutton Lamp 0 (out)		Flight indicator 0 (out)
+PORTE,1		Red Pushbutton Lamp 1 (out)		Flight indicator 1 (out)
+PORTE,2		Test Mode Switch (in)			Flight indicator 2 (out)
+PORTE,3		(audio stuff)				Flight indicator 3 (out)
+PORTE,4		(audio stuff)				Flight indicator 4 (out)
+PORTE,5		(audio stuff)				Flight indicator 5 (out)
+PORTE,6		(audio stuff)				Flight indicator 6 (out)
+PORTE,7		(audio stuff)				Flight indicator 7 (out)
+
+PORTF,0		(SMD Pad -- can use in a pinch)		Flight indicator 8 (out)
+PORTF,1		(SMD Pad -- can use in a pinch)		Flight indicator 9 (out)
+PORTF,2		UART Rx					"
+PORTF,3		UART Tx					"
+PORTF,4		(NC)					Spare IO 2 (?)
+PORTF,5		(NC)					Spare IO 3 (?)
+PORTF,6		(NC)					Spare IO 4 (?)
+PORTF,7		(Amplifier SD)				Spare IO 5 (?)
